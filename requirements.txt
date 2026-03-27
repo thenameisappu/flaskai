@@ -1,0 +1,10 @@
+streamlit
+streamlit-ketcher
+rdkit
+psycopg2-binary
+pandas
+fastapi
+uvicorn
+python-dotenv
+pydantic
+msvc-runtime
