@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 import logging
+import re
 
 from db_search import search_molecules
 
@@ -33,12 +34,30 @@ async def search_compounds(
     offset: int = 0
 ):
     try:
+        cid = None
+        iupacName = None
+        casNumber = None
+        altName = None
+        
+        cas_pattern = r'^\d{2,7}-\d{2}-\d$'
+
+        if q:
+            original_q = q.strip()
+
+            if original_q.isdigit():
+                cid = int(original_q)
+            elif re.match(cas_pattern, original_q):
+                casNumber = original_q
+            else:
+                iupacName = original_q
+                altName = original_q
+
         # Use centralized search logic
         df = search_molecules(
-            search=q,
-            iupacName=q,
-            altName=q,
-            casNumber=q,
+            iupacName=iupacName,
+            altName=altName,
+            casNumber=casNumber,
+            cid=cid,
             minWeight=mwMin,
             maxWeight=mwMax
         )

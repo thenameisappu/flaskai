@@ -3,6 +3,7 @@ from streamlit_ketcher import st_ketcher
 
 from rdkit import Chem
 from rdkit.Chem import Draw, Descriptors
+import re
 
 from db_search import search_molecules
 from normalization import generate_canonical_key
@@ -66,6 +67,8 @@ with col2:
 # =========================
 
 def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold):
+    from rdkit import RDLogger
+
     # Convert defaults to None
     minW = minWeight if minWeight != 0 else None
     maxW = maxWeight if maxWeight != 0 else None
@@ -76,7 +79,8 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
     casNumber = None
     altName = None
 
-    from rdkit import RDLogger
+    cas_pattern = r'^\d{2,7}-\d{2}-\d$'
+
     if smiles:
         RDLogger.DisableLog('rdApp.*')
         check_mol = Chem.MolFromSmiles(smiles)
@@ -101,10 +105,10 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
         # 2. CID detection
         elif query.isdigit():
             cid = int(query)
-        # 3. CAS detection (example: 50-78-2)
-        elif "-" in query:
+        # 3. CAS detection — strict regex (e.g. 50-78-2), NOT any hyphenated string
+        elif re.match(cas_pattern, query):
             casNumber = query
-        # 4. Name search fallback
+        # 4. Name search fallback (includes names with hyphens like "2-propanol")
         else:
             iupacName = query
             altName = query
@@ -142,7 +146,7 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
             if mol:
                 res_col1, res_col2 = st.columns(2)
                 with res_col1:
-                    st.write("Smlies:", smiles_str)
+                    st.write("SMILES:", smiles_str)
                     img = Draw.MolToImage(mol, size=(300, 300))
                     st.image(img, caption=row.get("iupacName") or row.get("iupacname", "Unknown Molecule"))
                 with res_col2:

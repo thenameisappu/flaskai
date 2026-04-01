@@ -3,12 +3,40 @@ from db import get_connection
 from rdkit import Chem
 from rdkit.Chem.inchi import MolToInchiKey
 from rdkit.Chem import AllChem, DataStructs
-import re
 import warnings
 
-from normalization import normalize_chemical_name
-
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
+
+# Full Greek symbol → ascii word map (covers all common chemical name usage)
+_GREEK_TO_ASCII = {
+    'α': 'alpha', 'Α': 'alpha',
+    'β': 'beta',  'Β': 'beta',
+    'γ': 'gamma', 'Γ': 'gamma',
+    'δ': 'delta', 'Δ': 'delta',
+    'ε': 'epsilon', 'Ε': 'epsilon',
+    'ζ': 'zeta',  'Ζ': 'zeta',
+    'η': 'eta',   'Η': 'eta',
+    'θ': 'theta', 'Θ': 'theta',
+    'μ': 'mu',    'Μ': 'mu',
+    'ω': 'omega', 'Ω': 'omega',
+}
+
+
+def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
+    """Normalize a chemical name for exact matching:
+    - Lowercase
+    - Replace Greek symbols with ascii words
+    - Replace hyphens/underscores with spaces (unless preserve_hyphens=True)
+    """
+    if not text:
+        return ""
+    result = text.lower()
+    for symbol, word in _GREEK_TO_ASCII.items():
+        result = result.replace(symbol.lower(), word)
+    if not preserve_hyphens:
+        result = result.replace('-', ' ').replace('_', ' ')
+    return result
+
 
 def check_rdkit_extension(conn):
     try:
@@ -20,23 +48,6 @@ def check_rdkit_extension(conn):
     except Exception:
         return False
 
-
-def expand_greek_variants(text):
-    if not text:
-        return []
-    variants = [text]
-    # Simple greek replacements keeping the rest of the string intact
-    greek_forward = {'alpha': 'α', 'beta': 'β', 'gamma': 'γ', 'delta': 'δ', 'epsilon': 'ε'}
-    greek_backward = {v: k for k, v in greek_forward.items()}
-    mapping = {**greek_forward, **greek_backward}
-    
-    for k, v in mapping.items():
-        if k in text.lower():
-            pattern = re.compile(re.escape(k), re.IGNORECASE)
-            variants.append(pattern.sub(v, text))
-            
-    return list(set(variants))
-
 def search_molecules(
     smiles=None,
     iupacName=None,
@@ -45,7 +56,7 @@ def search_molecules(
     cid=None,
     minWeight=None,
     maxWeight=None,
-    search=None,
+
     exact=False,
     search_mode="",
     similarity_threshold=0.7
@@ -60,84 +71,68 @@ def search_molecules(
         params = []
 
         # =========================
-        # UNIFIED NORMALIZED SEARCH
-        # =========================
-        if search:
-
-            # 1. Add preprocessing (normalization) layer before any comparison
-            normalized_query = normalize_chemical_name(search)
-            
-            # The unified Global Text Field Searches across all columns
-            conditions = """
-                casnumber = %s
-                OR casnumber ILIKE %s
-                OR array_to_string(alternativenames, ',') ILIKE %s
-                OR smiles ILIKE %s
-                OR inchikey ILIKE %s
-                OR cid::text ILIKE %s
-                OR molweight::text ILIKE %s
-            """
-
-            # Params carefully aligned
-            params.extend([
-                search, f"%{search}%", normalized_query, normalized_query,
-                f"%{normalized_query}%", f"%{normalized_query}%", f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"
-            ])
-            
-            query += f" AND ({conditions})"
-
-        # =========================
         # COLUMN-SPECIFIC SEARCHES
         # =========================
-        else:
-            name_filters = []
+        name_filters = []
 
-            if iupacName:
-                variants = expand_greek_variants(iupacName)
-                sub_filters = []
-                for v in variants:
-                    if exact:
-                        sub_filters.append("lower(iupacname) = %s")
-                        params.append(v)
-                    else:
-                        sub_filters.append("lower(iupacname) ILIKE %s")
-                        params.append(f"%{v}%")
-                name_filters.append("(" + " OR ".join(sub_filters) + ")")
+        if iupacName:
+            # Normalize input: lowercase, Greek symbols → ascii, hyphens/underscores → spaces
+            iupac_norm = normalize_for_search(iupacName)
+            sub_filters = []
+            # DB side: apply same normalization inline in SQL
+            sub_filters.append(
+                "lower(replace(replace(iupacname, '-', ' '), '_', ' ')) = %s"
+            )
+            params.append(iupac_norm)
+            name_filters.append("(" + " OR ".join(sub_filters) + ")")
 
-            if altName:
-                variants = expand_greek_variants(altName)
-                sub_filters = []
-                for v in variants:
-                    if exact:
-                        sub_filters.append("%s = ANY(alternativenames)")
-                        params.append(v)
-                    else:
-                        sub_filters.append("lower(array_to_string(alternativenames, ',')) ILIKE %s")
-                        params.append(f"%{v}%")
-                name_filters.append("(" + " OR ".join(sub_filters) + ")")
+        if altName:
+            # Normalize input: lowercase, Greek symbols → ascii, preserve hyphens
+            alt_norm = normalize_for_search(altName, preserve_hyphens=True)
 
-            if name_filters:
-                query += " AND (" + " OR ".join(name_filters) + ")"
+            _db_greek_norm = (
+                "lower("
+                "replace(replace(replace(replace(replace(replace(replace(replace(replace(replace("
+                "x, 'α','alpha'),'Α','alpha'),'β','beta'),'Β','beta'),'γ','gamma'),'Γ','gamma')"
+                ",'δ','delta'),'Δ','delta'),'ε','epsilon'),'Ε','epsilon'))"
+            )
 
-            if casNumber:
-                if exact:
-                    query += " AND casnumber = %s"
-                    params.append(casNumber)
-                else:
-                    query += " AND casnumber ILIKE %s"
-                    params.append(f"%{casNumber}%")
+            # Exact match: normalized input = normalized DB element (via UNNEST)
+            exact_match = (
+                f"%s IN (SELECT {_db_greek_norm} FROM unnest(alternativenames) x)"
+            )
 
-            if cid:
-                query += " AND cid = %s"
-                params.append(cid)
+            # Partial match: normalized DB element ILIKE %input% (via EXISTS + UNNEST)
+            partial_match = (
+                f"EXISTS (SELECT 1 FROM unnest(alternativenames) x WHERE {_db_greek_norm} ILIKE %s)"
+            )
 
-            if minWeight and float(minWeight) > 0:
-                query += " AND molweight >= %s"
-                params.append(minWeight)
+            sub_filters = [exact_match, partial_match]
+            # Exact match param first, then partial with wildcards
+            params.append(alt_norm)
+            params.append(f"%{alt_norm}%")
 
-            if maxWeight and float(maxWeight) > 0:
-                query += " AND molweight <= %s"
-                params.append(maxWeight)
+            name_filters.append("(" + " OR ".join(sub_filters) + ")")
+
+        if name_filters:
+            query += " AND (" + " OR ".join(name_filters) + ")"
+
+        if casNumber:
+            # Always use exact match for CAS numbers
+            query += " AND casnumber = %s"
+            params.append(casNumber)
+
+        if cid:
+            query += " AND cid = %s"
+            params.append(cid)
+
+        if minWeight and float(minWeight) > 0:
+            query += " AND molweight >= %s"
+            params.append(minWeight)
+
+        if maxWeight and float(maxWeight) > 0:
+            query += " AND molweight <= %s"
+            params.append(maxWeight)
 
 
         # =========================
