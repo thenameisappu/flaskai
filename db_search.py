@@ -5,21 +5,9 @@ from rdkit.Chem.inchi import MolToInchiKey
 from rdkit.Chem import AllChem, DataStructs
 import warnings
 
-warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
+from normalization import GREEK_SYMBOLS
 
-# Full Greek symbol → ascii word map (covers all common chemical name usage)
-_GREEK_TO_ASCII = {
-    'α': 'alpha', 'Α': 'alpha',
-    'β': 'beta',  'Β': 'beta',
-    'γ': 'gamma', 'Γ': 'gamma',
-    'δ': 'delta', 'Δ': 'delta',
-    'ε': 'epsilon', 'Ε': 'epsilon',
-    'ζ': 'zeta',  'Ζ': 'zeta',
-    'η': 'eta',   'Η': 'eta',
-    'θ': 'theta', 'Θ': 'theta',
-    'μ': 'mu',    'Μ': 'mu',
-    'ω': 'omega', 'Ω': 'omega',
-}
+warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 
 def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
@@ -31,7 +19,7 @@ def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
     if not text:
         return ""
     result = text.lower()
-    for symbol, word in _GREEK_TO_ASCII.items():
+    for symbol, word in GREEK_SYMBOLS.items():
         result = result.replace(symbol.lower(), word)
     if not preserve_hyphens:
         result = result.replace('-', ' ').replace('_', ' ')
