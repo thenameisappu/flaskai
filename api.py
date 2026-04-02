@@ -6,24 +6,15 @@ import re
 
 from db_search import search_molecules
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Molecule Search API")
 
-# =========================
-# Request models
-# =========================
-
 class StructureQuery(BaseModel):
     smiles: str
     threshold: Optional[float] = 0.7
 
-
-# =========================
-# TEXT SEARCH
-# =========================
 
 @app.get("/compounds/search")
 async def search_compounds(
@@ -52,7 +43,6 @@ async def search_compounds(
                 iupacName = original_q
                 altName = original_q
 
-        # Use centralized search logic
         df = search_molecules(
             iupacName=iupacName,
             altName=altName,
@@ -65,7 +55,6 @@ async def search_compounds(
         if df is None:
             raise HTTPException(status_code=500, detail="Database connection error")
             
-        # Apply limit and offset (since search_molecules doesn't currently handle them)
         df = df.iloc[offset : offset + limit]
         
         return df.to_dict(orient="records")
@@ -75,10 +64,6 @@ async def search_compounds(
         logger.error(f"Error in search_compounds: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-
-# =========================
-# EXACT STRUCTURE SEARCH
-# =========================
 
 @app.post("/compounds/structure/exact")
 async def exact_structure_search(query: StructureQuery):
@@ -92,10 +77,6 @@ async def exact_structure_search(query: StructureQuery):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# =========================
-# SUBSTRUCTURE SEARCH
-# =========================
-
 @app.post("/compounds/structure/substructure")
 async def substructure_search(query: StructureQuery):
     try:
@@ -107,10 +88,6 @@ async def substructure_search(query: StructureQuery):
         logger.error(f"Error in substructure_search: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-
-# =========================
-# SIMILARITY SEARCH
-# =========================
 
 @app.post("/compounds/structure/similarity")
 async def similarity_search(query: StructureQuery):

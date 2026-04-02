@@ -11,11 +11,6 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 
 def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
-    """Normalize a chemical name for exact matching:
-    - Lowercase
-    - Replace Greek symbols with ascii words
-    - Replace hyphens/underscores with spaces (unless preserve_hyphens=True)
-    """
     if not text:
         return ""
     result = text.lower()
@@ -58,20 +53,14 @@ def search_molecules(
         query = "SELECT * FROM molecules WHERE 1=1"
         params = []
 
-        # =========================
-        # COLUMN-SPECIFIC SEARCHES
-        # =========================
         name_filters = []
 
         if iupacName:
-            # Normalize input: lowercase, Greek symbols → ascii, hyphens/underscores → spaces
             iupac_norm = normalize_for_search(iupacName)
             sub_filters = []
-            # Exact match: normalized input = normalized DB value
             sub_filters.append(
                 "lower(replace(replace(iupacname, '-', ' '), '_', ' ')) = %s"
             )
-            # Partial match: normalized DB value contains the input
             sub_filters.append(
                 "lower(replace(replace(iupacname, '-', ' '), '_', ' ')) LIKE %s"
             )
@@ -80,7 +69,6 @@ def search_molecules(
             name_filters.append("(" + " OR ".join(sub_filters) + ")")
 
         if altName:
-            # Normalize input: lowercase, Greek symbols → ascii, preserve hyphens
             alt_norm = normalize_for_search(altName, preserve_hyphens=True)
 
             _db_greek_norm = (
@@ -90,24 +78,20 @@ def search_molecules(
                 ",'δ','delta'),'Δ','delta'),'ε','epsilon'),'Ε','epsilon'))"
             )
 
-            # Exact match: normalized input = normalized DB element (via UNNEST)
             exact_match = (
                 f"%s IN (SELECT {_db_greek_norm} FROM unnest(alternativenames) x)"
             )
 
-            # Partial match: normalized DB element ILIKE %input% (via EXISTS + UNNEST)
             partial_match = (
                 f"EXISTS (SELECT 1 FROM unnest(alternativenames) x WHERE {_db_greek_norm} ILIKE %s)"
             )
 
             sub_filters = [exact_match, partial_match]
-            # Exact match param first, then partial with wildcards
             params.append(alt_norm)
             params.append(f"%{alt_norm}%")
             name_filters.append("(" + " OR ".join(sub_filters) + ")")
 
         if casNumber:
-            # Partial case-insensitive match OR'd with name filters
             name_filters.append("casnumber ILIKE %s")
             params.append(f"%{casNumber}%")
 
@@ -115,7 +99,6 @@ def search_molecules(
             query += " AND (" + " OR ".join(name_filters) + ")"
 
         if cid:
-            # Partial match: cast cid to text so '251' matches 2519, 251, etc.
             query += " AND CAST(cid AS TEXT) LIKE %s"
             params.append(f"%{cid}%")
 
@@ -128,9 +111,6 @@ def search_molecules(
             params.append(maxWeight)
 
 
-        # =========================
-        # RDKit STRUCTURE SEARCH (UNCHANGED)
-        # =========================
         if smiles and has_extension:
             mol = Chem.MolFromSmiles(smiles)
             if mol:
@@ -160,7 +140,6 @@ def search_molecules(
         df = pd.read_sql(query, conn, params=params)
         conn.close()
 
-        # Fallback RDKit Search mode (Unchanged)
         if smiles and not has_extension and not df.empty:
             query_mol = Chem.MolFromSmiles(smiles)
             if not query_mol:

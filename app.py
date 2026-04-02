@@ -11,21 +11,11 @@ from normalization import generate_canonical_key
 st.set_page_config(layout="wide")
 
 st.title("🧪 Molecule Dashboard")
-
-# =========================
-# Draw molecule section
-# =========================
-
 smiles = st_ketcher()
 
 
-# =========================
-# Unified Search section
-# =========================
-
 st.header("🔍 Molecular Search")
 
-# Search mode selector
 search_mode = st.selectbox(
     "Structure Search Mode",
     ["exact", "substructure", "similarity"]
@@ -39,7 +29,6 @@ if search_mode == "similarity":
         0.1, 1.0, 0.7
     )
 
-# Single universal search box
 query = st.text_input(
     "Search by Name, CAS Number, Alternative Name, CID, or SMILES"
 )
@@ -61,18 +50,12 @@ with col2:
     )
 
 
-# =========================
-# Unified Search Functionality
-# =========================
-
 def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold):
     from rdkit import RDLogger
 
-    # Convert defaults to None
     minW = minWeight if minWeight != 0 else None
     maxW = maxWeight if maxWeight != 0 else None
 
-    # Auto-detect search type
     cid = None
     iupacName = None
     casNumber = None
@@ -95,21 +78,18 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
         
         looks_like_smiles = any(c in query for c in "#()[]=@") and not query.isdigit()
 
-        # 1. SMILES detection (priority)
         if query_mol and query_mol.GetNumAtoms() > 0:
             smiles = query
         elif looks_like_smiles:
             st.warning("Invalid SMILES string provided.")
             return
-        # 2. CID detection
+
         elif query.isdigit():
             cid = query  # keep as string for partial LIKE matching
-        # 3. Strict standard CAS (e.g. 50-78-2) — only search CAS column
+
         elif re.match(cas_pattern, query):
             casNumber = query
-        # 4. Everything else: partial CAS, non-standard CAS (NA-XXXX),
-        #    or compound names (with or without hyphens like "2-propanol")
-        #    → try CAS LIKE + iupacName + altName simultaneously
+
         else:
             casNumber = query
             iupacName = query
@@ -167,15 +147,10 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
     else:
         st.warning("Compound not found")
 
-# =========================
-# Trigger Logic
-# =========================
 
-# Initialize session state for tracking SMILES changes
 if "last_smiles" not in st.session_state:
     st.session_state.last_smiles = None
 
-# Detect if "Apply" was clicked in Ketcher (smiles changed)
 auto_trigger = False
 if smiles and smiles != st.session_state.last_smiles:
     st.session_state.last_smiles = smiles

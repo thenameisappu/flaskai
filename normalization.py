@@ -39,32 +39,22 @@ def normalize_chemical_name(name: str) -> str:
     if not name:
         return ""
 
-    # Convert to string and lowercase
     name = str(name).strip().lower()
 
-    # Replace escaped unicode first
     for esc, word in GREEK_ESCAPED.items():
         name = name.replace(esc.lower(), word)
 
-    # Replace actual Greek symbols
     for symbol, word in GREEK_SYMBOLS.items():
         name = name.replace(symbol.lower(), word)
 
-    # Normalize common separators explicitly
     name = name.replace('-', '')
     name = name.replace(' ', '')
 
-    # Remove any remaining special characters
     name = NON_ALPHANUMERIC.sub('', name)
-
     return name
 
 
 def generate_canonical_key(name: str) -> str:
-    """
-    Generates a deterministic unique key for a chemical name.
-    Uses SHA-256 hashing.
-    """
     normalized = normalize_chemical_name(name)
 
     if not normalized:

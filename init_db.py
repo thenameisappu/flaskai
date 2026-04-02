@@ -7,7 +7,6 @@ def init_db():
         conn = get_connection()
         cur = conn.cursor()
         
-        # 1. Try to enable RDKit extension (might fail on native Windows)
         print("Checking for RDKit extension...")
         try:
             cur.execute("CREATE EXTENSION IF NOT EXISTS rdkit;")
@@ -20,10 +19,8 @@ def init_db():
             print("Running in 'Python Fallback' mode - advanced SQL structure search will be disabled.")
             has_rdkit = False
 
-        # 2. Create molecules table
         print("Setting up tables...")
         
-        # Base columns
         columns = """
             id SERIAL PRIMARY KEY,
             cid INTEGER UNIQUE,
@@ -36,13 +33,11 @@ def init_db():
         """
         
         if has_rdkit:
-            # Add specialized RDKit column
             columns += ", structureMol mol"
             
         create_table_sql = f"CREATE TABLE IF NOT EXISTS molecules ({columns});"
         cur.execute(create_table_sql)
         
-        # 3. Create indexes (only if RDKit is available for gist)
         print("Setting up indexes...")
         if has_rdkit:
             cur.execute("CREATE INDEX IF NOT EXISTS mol_structure_idx ON molecules USING gist(structureMol);")
