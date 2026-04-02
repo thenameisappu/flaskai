@@ -1,7 +1,6 @@
 import re
 import hashlib
 
-# Extended Greek symbol map (lower + upper case)
 GREEK_SYMBOLS = {
     'α': 'alpha', 'Α': 'alpha',
     'β': 'beta',  'Β': 'beta',
@@ -29,24 +28,14 @@ GREEK_SYMBOLS = {
     'ω': 'omega', 'Ω': 'omega'
 }
 
-# Escaped Unicode forms (\u03b1, \u0391, etc.)
 GREEK_ESCAPED = {
     f"\\u{ord(symbol):04x}": word
     for symbol, word in GREEK_SYMBOLS.items()
 }
 
-# Precompile regex for performance
 NON_ALPHANUMERIC = re.compile(r'[^a-z0-9]+')
 
 def normalize_chemical_name(name: str) -> str:
-    """
-    Universal chemical name normalizer.
-    Safe for:
-    - Greek symbols (α, β, etc.)
-    - Escaped unicode (\\u03b1)
-    - Different formatting styles
-    """
-
     if not name:
         return ""
 

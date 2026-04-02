@@ -8,7 +8,6 @@ import re
 from db_search import search_molecules
 from normalization import generate_canonical_key
 
-
 st.set_page_config(layout="wide")
 
 st.title("🧪 Molecule Dashboard")
@@ -104,12 +103,15 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
             return
         # 2. CID detection
         elif query.isdigit():
-            cid = int(query)
-        # 3. CAS detection — strict regex (e.g. 50-78-2), NOT any hyphenated string
+            cid = query  # keep as string for partial LIKE matching
+        # 3. Strict standard CAS (e.g. 50-78-2) — only search CAS column
         elif re.match(cas_pattern, query):
             casNumber = query
-        # 4. Name search fallback (includes names with hyphens like "2-propanol")
+        # 4. Everything else: partial CAS, non-standard CAS (NA-XXXX),
+        #    or compound names (with or without hyphens like "2-propanol")
+        #    → try CAS LIKE + iupacName + altName simultaneously
         else:
+            casNumber = query
             iupacName = query
             altName = query
 

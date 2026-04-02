@@ -67,11 +67,16 @@ def search_molecules(
             # Normalize input: lowercase, Greek symbols → ascii, hyphens/underscores → spaces
             iupac_norm = normalize_for_search(iupacName)
             sub_filters = []
-            # DB side: apply same normalization inline in SQL
+            # Exact match: normalized input = normalized DB value
             sub_filters.append(
                 "lower(replace(replace(iupacname, '-', ' '), '_', ' ')) = %s"
             )
+            # Partial match: normalized DB value contains the input
+            sub_filters.append(
+                "lower(replace(replace(iupacname, '-', ' '), '_', ' ')) LIKE %s"
+            )
             params.append(iupac_norm)
+            params.append(f"%{iupac_norm}%")
             name_filters.append("(" + " OR ".join(sub_filters) + ")")
 
         if altName:
@@ -99,20 +104,20 @@ def search_molecules(
             # Exact match param first, then partial with wildcards
             params.append(alt_norm)
             params.append(f"%{alt_norm}%")
-
             name_filters.append("(" + " OR ".join(sub_filters) + ")")
+
+        if casNumber:
+            # Partial case-insensitive match OR'd with name filters
+            name_filters.append("casnumber ILIKE %s")
+            params.append(f"%{casNumber}%")
 
         if name_filters:
             query += " AND (" + " OR ".join(name_filters) + ")"
 
-        if casNumber:
-            # Always use exact match for CAS numbers
-            query += " AND casnumber = %s"
-            params.append(casNumber)
-
         if cid:
-            query += " AND cid = %s"
-            params.append(cid)
+            # Partial match: cast cid to text so '251' matches 2519, 251, etc.
+            query += " AND CAST(cid AS TEXT) LIKE %s"
+            params.append(f"%{cid}%")
 
         if minWeight and float(minWeight) > 0:
             query += " AND molweight >= %s"
