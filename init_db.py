@@ -93,3 +93,4 @@ def init_db():
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     init_db()
+    
