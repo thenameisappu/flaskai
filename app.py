@@ -20,7 +20,7 @@ smiles = st_ketcher()
 st.header("🔍 Molecular Search")
 
 search_mode = st.selectbox(
-    "Structure Search Mode",
+    "Search Mode",
     ["exact", "substructure", "similarity"]
 )
 
@@ -33,7 +33,7 @@ if search_mode == "similarity":
     )
 
 query = st.text_input(
-    "Search by Name, CAS Number, Alternative Name, CID, or SMILES"
+    "Search Box"
 )
 
 col1, col2 = st.columns(2)
