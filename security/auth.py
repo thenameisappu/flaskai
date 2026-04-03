@@ -9,11 +9,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 def _load_api_key_hashes() -> dict:
-    """
-    Read comma-separated API key hashes from the API_KEY_HASHES environment variable.
-    Format should be: <sha256_hash>:<role>,<sha256_hash>:<role>
-    If no role is provided, defaults to 'user'.
-    """
     raw = os.getenv("API_KEY_HASHES", "")
     key_map = {}
     for entry in raw.split(","):
@@ -35,10 +30,6 @@ def _load_api_key_hashes() -> dict:
 _VALID_API_HASHES: dict = _load_api_key_hashes()
 
 def get_verify_api_key_dependency(required_role: str = None):
-    """
-    Build and return the FastAPI Security dependency that validates X-API-Key natively.
-    Uses HMAC comparison on a dynamically generated SHA-256 to prevent timing attacks.
-    """
     from fastapi import HTTPException, Depends
     from fastapi.security.api_key import APIKeyHeader
 

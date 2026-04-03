@@ -1,14 +1,6 @@
 MAX_QUERY_LEN: int = 512
 
 def validate_text_query(value: str) -> str:
-    """
-    Validate and sanitize a free-text search query.
-
-    Raises:
-        ValueError: if input exceeds MAX_QUERY_LEN or contains control characters.
-    Returns:
-        The stripped, validated string (empty string if input is falsy).
-    """
     if not value:
         return ""
     value = value.strip()
@@ -22,14 +14,6 @@ def validate_text_query(value: str) -> str:
 
 
 def validate_smiles(value: str) -> str:
-    """
-    Validate a SMILES string: non-empty, bounded length, printable characters only.
-
-    Raises:
-        ValueError: if the SMILES is empty, too long, or contains control characters.
-    Returns:
-        The stripped, validated SMILES string.
-    """
     value = (value or "").strip()
     if not value:
         raise ValueError("SMILES string cannot be empty.")

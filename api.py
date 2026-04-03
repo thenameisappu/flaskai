@@ -48,7 +48,7 @@ if not _allowed_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=False,   # No cookies used; API key is in header.
+    allow_credentials=False,  
     allow_methods=["GET", "POST"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
@@ -96,7 +96,7 @@ class StructureQuery(BaseModel):
 @app.get("/compounds/search")
 @limiter.limit("60/minute")
 async def search_compounds(
-    request: Request,                                       # required by slowapi
+    request: Request,                                    
     q: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="Name / CAS / CID / SMILES"),
     mwMin: Optional[float] = Query(None, ge=0.0, description="Min molecular weight"),
     mwMax: Optional[float] = Query(None, ge=0.0, description="Max molecular weight"),

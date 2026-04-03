@@ -1,6 +1,5 @@
 import re
 
-# Internal LIKE escape character — unlikely to appear in chemical names.
 _LIKE_ESCAPE_CHAR = "!"
 
 def escape_like(value: str) -> str:

@@ -7,12 +7,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Required environment variables — NO fallback for secrets.
 _REQUIRED_DB_VARS = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
 
 
 def _get_db_config() -> dict:
-    """Read DB config from environment. Raises RuntimeError if any required var is missing."""
     missing = [v for v in _REQUIRED_DB_VARS if not os.getenv(v)]
     if missing:
         raise RuntimeError(

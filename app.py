@@ -56,7 +56,6 @@ with col2:
 def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold):
     from rdkit import RDLogger
 
-    # Central input validation — reuses the same logic as the API layer.
     try:
         query = validate_text_query(query)
     except ValueError as e:
@@ -95,7 +94,7 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
             return
 
         elif query.isdigit():
-            cid = query  # keep as string for partial LIKE matching
+            cid = query  
 
         elif re.match(cas_pattern, query):
             casNumber = query
@@ -181,4 +180,4 @@ if st.button("Search Molecules") or auto_trigger:
         )
     else:
         st.session_state.last_search_time = time.time()
-        perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold)
+        perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold)

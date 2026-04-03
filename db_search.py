@@ -14,8 +14,6 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 logger = logging.getLogger(__name__)
 
-# Hard cap: max rows fetched from DB in Python-fallback mode (no RDKit extension).
-# Prevents full-table reads even when structural filtering happens in Python.
 _DB_ROW_HARD_LIMIT = 1000
 
 
@@ -57,16 +55,6 @@ def search_molecules(
     limit=200,
     offset=0,
 ):
-    """
-    Search the molecules table and return a DataFrame.
-
-    Security hardening applied here:
-    - Uses psycopg2.sql for safe, modular dynamic query building avoiding string concat.
-    - All user values are passed as parameterized %s placeholders.
-    - LIKE patterns are escaped via escape_like() + ESCAPE '!' to prevent wildcard injection.
-    - DB-level LIMIT/OFFSET prevents full-table reads (DoS protection).
-    - Python-fallback path is capped at _DB_ROW_HARD_LIMIT rows.
-    """
     try:
         conn = get_connection()
         has_extension = check_rdkit_extension(conn)
@@ -108,7 +96,6 @@ def search_molecules(
         if altName:
             alt_norm = normalize_for_search(altName, preserve_hyphens=True)
             alt_escaped = escape_like(alt_norm)
-            # _db_greek_norm is a constant SQL expression
             _db_greek_norm = psycopg2_sql.SQL(
                 "lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace("
                 "x, 'α','alpha'),'Α','alpha'),'β','beta'),'Β','beta'),'γ','gamma'),'Γ','gamma')"
