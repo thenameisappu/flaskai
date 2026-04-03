@@ -102,4 +102,4 @@ Security is deeply integrated directly into the infrastructure:
 * **Database**: PostgreSQL (with mcs07/postgres-rdkit)
 * **Data Processing**: Pandas
 * **Deployment**: Docker, Docker Compose
-* 
+
