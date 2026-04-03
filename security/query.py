@@ -32,3 +32,4 @@ def safe_query(table: str, filters: dict):
         query += psycopg2_sql.SQL(" WHERE ") + psycopg2_sql.SQL(" AND ").join(conditions)
 
     return query, params
+    
