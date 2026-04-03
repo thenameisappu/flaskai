@@ -7,15 +7,6 @@ ALLOWED_COLUMNS = {"name", "alternativenames", "id", "smiles", "cid", "iupacname
 _LIKE_ESCAPE_CHAR = "!"
 
 def escape_like(value: str) -> str:
-    """
-    Escape PostgreSQL LIKE metacharacters in a user-supplied string.
-
-    Always pair this with  ESCAPE '!'  in the SQL clause:
-        column LIKE %s ESCAPE '!'
-
-    Escapes: ! → !!   % → !%   _ → !_
-    This prevents users from injecting arbitrary LIKE wildcards.
-    """
     return (
         value
         .replace(_LIKE_ESCAPE_CHAR, _LIKE_ESCAPE_CHAR * 2)
