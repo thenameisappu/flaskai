@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import pandas as pd
 from db import get_connection
@@ -73,6 +74,9 @@ def search_molecules(
         if not allowed_tables:
             raise ValueError("ALLOWED_TABLES is not set")
 
+        if not re.match(r'^[a-z0-9_]+$', table_name):
+            raise ValueError(f"Invalid table name format in config: {table_name}")
+
         if table_name not in allowed_tables:
             raise ValueError(f"Unauthorized table name: {table_name}")
 
@@ -81,6 +85,19 @@ def search_molecules(
         )
         params = []
         name_filters = []
+
+        ALLOWED_COLUMNS = {"cid", "casnumber", "molweight", "smiles", "inchikey", "iupacname", "alternativenames"}
+        search_cols = []
+        if iupacName: search_cols.append("iupacname")
+        if altName: search_cols.append("alternativenames")
+        if casNumber: search_cols.append("casnumber")
+        if cid is not None: search_cols.append("cid")
+        if minWeight or maxWeight: search_cols.append("molweight")
+        if smiles and has_extension: search_cols.extend(["smiles", "inchikey"])
+
+        for col in search_cols:
+            if col not in ALLOWED_COLUMNS:
+                raise ValueError("Invalid column name")
 
         # ── IUPAC Name ─────────────────────────────────────────────────────────
         if iupacName:
@@ -119,7 +136,7 @@ def search_molecules(
 
         # ── CID — cast to TEXT for partial numeric search ───────────────────────
         if cid is not None:
-            query += psycopg2_sql.SQL(" AND CAST(cid AS TEXT) LIKE %s")
+            query += psycopg2_sql.SQL(" AND CAST(cid AS TEXT) LIKE %s ESCAPE '!'")
             params.append(f"%{cid}%")
 
         # ── Molecular weight range ─────────────────────────────────────────────

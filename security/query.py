@@ -1,4 +1,8 @@
 import re
+from psycopg2 import sql as psycopg2_sql
+
+ALLOWED_TABLES = {"users", "products", "orders", "molecules", "compounds", "test_molecules", "production_molecules"}
+ALLOWED_COLUMNS = {"name", "alternativenames", "id", "smiles", "cid", "iupacname", "casnumber", "inchikey", "molweight"}
 
 _LIKE_ESCAPE_CHAR = "!"
 
@@ -25,15 +29,20 @@ def safe_query(table: str, filters: dict):
     For db_search.py, we directly leverage psycopg2.sql for AST evaluation.
     This acts as a standardized template for future basic reads.
     """
+    if table not in ALLOWED_TABLES:
+        raise ValueError("Invalid table name")
+
     conditions = []
     params = []
 
     for k, v in filters.items():
-        conditions.append(f"{k} = %s")
+        if k not in ALLOWED_COLUMNS:
+            raise ValueError("Invalid column name")
+        conditions.append(psycopg2_sql.SQL("{} = %s").format(psycopg2_sql.Identifier(k)))
         params.append(v)
 
-    sql = f"SELECT * FROM {table}"
+    query = psycopg2_sql.SQL("SELECT * FROM {}").format(psycopg2_sql.Identifier(table))
     if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
+        query += psycopg2_sql.SQL(" WHERE ") + psycopg2_sql.SQL(" AND ").join(conditions)
 
-    return sql, params
+    return query, params
