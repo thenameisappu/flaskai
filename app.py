@@ -181,3 +181,4 @@ if st.button("Search Molecules") or auto_trigger:
     else:
         st.session_state.last_search_time = time.time()
         perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold)
+ 
