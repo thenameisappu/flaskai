@@ -102,23 +102,4 @@ Security is deeply integrated directly into the infrastructure:
 * **Database**: PostgreSQL (with mcs07/postgres-rdkit)
 * **Data Processing**: Pandas
 * **Deployment**: Docker, Docker Compose
-
-## 🚧 Future Improvements
-
-* Enable multi-threaded caching on repetitive molecular structure searches (e.g., Redis).
-* Expand REST API to include authenticated `POST` endpoints for molecular insertions.
-* Integrate parallel batch importing for large SDF data sets directly into the database.
-* Implement integration test suites (PyTest) for CI/CD checks on security endpoints.
-
-## 🤝 Contributing
-
-Contributions are welcome!
-1. Fork the project.
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the Branch (`git push origin feature/AmazingFeature`).
-5. Open a Pull Request.
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+* 
