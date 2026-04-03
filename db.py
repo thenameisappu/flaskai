@@ -1,20 +1,40 @@
 import os
+import logging
 import psycopg2
 from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_connection():
-    
-    try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            database=os.getenv("DB_NAME", "flaskai"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", "192602@Bb"),
-            port=os.getenv("DB_PORT", "5433")
+logger = logging.getLogger(__name__)
+
+# Required environment variables — NO fallback for secrets.
+_REQUIRED_DB_VARS = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+
+
+def _get_db_config() -> dict:
+    """Read DB config from environment. Raises RuntimeError if any required var is missing."""
+    missing = [v for v in _REQUIRED_DB_VARS if not os.getenv(v)]
+    if missing:
+        raise RuntimeError(
+            f"Missing required database environment variables: {', '.join(missing)}. "
+            "Set them in your .env file (see .env.example)."
         )
+    return {
+        "host": os.getenv("DB_HOST"),
+        "dbname": os.getenv("DB_NAME"),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "port": os.getenv("DB_PORT"),
+    }
+
+
+def get_connection():
+    try:
+        config = _get_db_config()
+        conn = psycopg2.connect(**config)
         return conn
+    except RuntimeError:
+        raise
     except Exception as e:
-        print(f"Error connecting to the database: {e}")
+        logger.error("Database connection failed. Check your DB_* environment variables.")
         raise

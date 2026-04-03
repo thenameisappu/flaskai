@@ -1,3 +1,5 @@
+import time
+import html
 import streamlit as st
 from streamlit_ketcher import st_ketcher
 
@@ -7,6 +9,7 @@ import re
 
 from db_search import search_molecules
 from normalization import generate_canonical_key
+from security.validation import validate_text_query
 
 st.set_page_config(layout="wide")
 
@@ -52,6 +55,13 @@ with col2:
 
 def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold):
     from rdkit import RDLogger
+
+    # Central input validation — reuses the same logic as the API layer.
+    try:
+        query = validate_text_query(query)
+    except ValueError as e:
+        st.warning(str(e))
+        return
 
     minW = minWeight if minWeight != 0 else None
     maxW = maxWeight if maxWeight != 0 else None
@@ -128,9 +138,11 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
             if mol:
                 res_col1, res_col2 = st.columns(2)
                 with res_col1:
-                    st.write("SMILES:", smiles_str)
+                    safe_smiles = html.escape(str(smiles_str)) if smiles_str else ""
+                    st.write("SMILES:", safe_smiles)
                     img = Draw.MolToImage(mol, size=(300, 300))
-                    st.image(img, caption=row.get("iupacName") or row.get("iupacname", "Unknown Molecule"))
+                    safe_caption = html.escape(str(row.get("iupacName") or row.get("iupacname", "Unknown Molecule")))
+                    st.image(img, caption=safe_caption)
                 with res_col2:
                     st.subheader("Properties")
                     
@@ -151,11 +163,22 @@ def perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_
 if "last_smiles" not in st.session_state:
     st.session_state.last_smiles = None
 
+# Session-state rate limiting: prevent more than 1 search per 2 seconds.
+_MIN_SEARCH_INTERVAL = 2.0
+if "last_search_time" not in st.session_state:
+    st.session_state.last_search_time = 0.0
+
 auto_trigger = False
 if smiles and smiles != st.session_state.last_smiles:
     st.session_state.last_smiles = smiles
     auto_trigger = True
 
 if st.button("Search Molecules") or auto_trigger:
-    perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold)
-    
+    elapsed = time.time() - st.session_state.last_search_time
+    if elapsed < _MIN_SEARCH_INTERVAL:
+        st.warning(
+            f"Please wait {_MIN_SEARCH_INTERVAL - elapsed:.1f}s before searching again."
+        )
+    else:
+        st.session_state.last_search_time = time.time()
+        perform_search(smiles, query, minWeight, maxWeight, search_mode, similarity_threshold)
