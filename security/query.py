@@ -15,11 +15,6 @@ def escape_like(value: str) -> str:
     )
 
 def safe_query(table: str, filters: dict):
-    """
-    Constructs a basic safe SQL query using explicit string arrays.
-    For db_search.py, we directly leverage psycopg2.sql for AST evaluation.
-    This acts as a standardized template for future basic reads.
-    """
     if table not in ALLOWED_TABLES:
         raise ValueError("Invalid table name")
 
