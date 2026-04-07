@@ -15,6 +15,5 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8000
-EXPOSE 8501
 
-CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port 8000 & streamlit run App.py --server.port 8501 --server.address 0.0.0.0"]
+CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port 8000"]
