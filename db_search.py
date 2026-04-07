@@ -128,8 +128,8 @@ def search_molecules(
 
         # ── CAS Number — exact match ───────────────────────────────────────────
         if casNumber:
-            name_filters.append(psycopg2_sql.SQL("casnumber = %s"))
-            params.append(casNumber)
+            name_filters.append(psycopg2_sql.SQL("casnumber ILIKE %s"))
+            params.append(f"%{casNumber}%")
 
         if name_filters:
             query += psycopg2_sql.SQL(" AND ({})").format(psycopg2_sql.SQL(" OR ").join(name_filters))
