@@ -1,15 +1,14 @@
-# 🧪 Molecule Search API & Dashboard (FlaskAI)
+# 🧪 Molecule Search API (FlaskAI)
 
 ## 🚀 Overview
 
-The Molecule Search API & Dashboard is a full-stack, state-of-the-art chemical informatics platform designed to power advanced molecular searches. By uniting a modern Streamlit frontend with a high-performance FastAPI back-end, it empowers researchers and developers to search, visualize, and analyze molecular compounds effortlessly.
+The Molecule Search API is a state-of-the-art chemical informatics API platform designed to power advanced molecular searches. Powered by a high-performance FastAPI back-end, it empowers researchers and developers to search and analyze molecular compounds effortlessly.
 
 At its core, the project solves the complex challenge of chemical identification and structural matching by leveraging RDKit and a customized PostgreSQL database. It supports advanced structure-based queries—like exact match, substructure matching, and Tanimoto similarity—while also offering comprehensive text-based search (SMILES, IUPAC, CAS, and common names) paired with robust chemical name normalization.
 
 ## 🧠 Features
 
 * **Advanced Structural Search**: Perform Exact, Substructure, and Similarity (Tanimoto) searches.
-* **Interactive Chemical Drawing**: Integrated Ketcher tool for drawing molecules directly in the browser.
 * **Flexible Text Search**: Query by CAS Number, IUPAC Name, alternate names, CID, or SMILES.
 * **Smart Chemical Normalization**: Automatically normalizes Greek letters (e.g., α to alpha) and generates deterministic, canonical SHA-256 chemical hashes to identify compounds seamlessly.
 * **Property Calculation on the Fly**: Computes Molecular Weight, LogP, and Atom Counts natively using RDKit.
@@ -20,19 +19,17 @@ At its core, the project solves the complex challenge of chemical identification
 
 The system is built on a service-oriented architecture ensuring high scalability, strong security, and clear separation of concerns.
 
-* **Frontend Layer (`app.py`)**: A Streamlit application offering a rich UI. It communicates with the database search logical modules, validating inputs before requests are evaluated.
 * **API Layer (`api.py`)**: A fast, asynchronous REST API powered by FastAPI. Handles routing, rate limiting, and core security checks.
 * **Business & Database Layer (`db.py`, `db_search.py`)**: Manages secure connection pooling and constructs dynamic, SQL-injection-safe queries. Determines whether DB-level or Python-level structural filtering is required.
 * **Normalization & Security (`normalization.py`, `security/`)**: Normalizes complex chemical inputs and enforces strict authentication, query escaping, and input validation bounds.
 
 **Execution Flow:**
-Input (Drawing / Text string) → API / UI Request → Input Validation & Normalization → Parameterized SQL Query Generation → PostgreSQL Execution (RDKit Ext.) → Python-level filtering (Fallback) → Data Structuring → Output (Metrics & 2D render)
+Input (Text string / SMILES) → API Request → Input Validation & Normalization → Parameterized SQL Query Generation → PostgreSQL Execution (RDKit Ext.) → Python-level filtering (Fallback) → Data Structuring → JSON Output
 
 ## 📂 Project Structure
 
 ```text
 FlaskAI/
-├── app.py                   # Streamlit interactive application
 ├── api.py                   # FastAPI REST API endpoints
 ├── db.py                    # Database connection setup & configuration
 ├── db_search.py             # Core molecular querying logic
@@ -44,7 +41,7 @@ FlaskAI/
 ├── .env.example             # Environment variable templates
 ├── requirements.txt         # Python dependencies
 ├── Dockerfile               # Production multi-service Docker image setup
-└── docker-compose.yml       # Orchestration for API, App, DB, and pgAdmin
+└── docker-compose.yml       # Orchestration for API, DB, and pgAdmin
 ```
 
 ## ⚙️ Installation
@@ -61,7 +58,7 @@ cp .env.example .env
 *(Configure `DB_PASSWORD`, `API_KEYS`, and `ALLOWED_ORIGINS` according to your specific environment within `.env`)*
 
 ### 2. Run with Docker Compose
-The system is fully containerized. A single command handles the database, API, web app, and pgAdmin.
+The system is fully containerized. A single command handles the database, API, and pgAdmin.
 ```bash
 docker-compose up --build -d
 ```
@@ -70,7 +67,6 @@ docker-compose up --build -d
 
 Once the containers are running, the services are available at:
 
-* **Streamlit Dashboard**: [http://localhost:8501](http://localhost:8501)
 * **REST API**: [http://localhost:8000](http://localhost:8000)
     * *API Documentation (OpenAPI)*: Available at `http://localhost:8000/docs`
 * **pgAdmin Database Dashboard**: [http://localhost:8080](http://localhost:8080)
@@ -97,8 +93,8 @@ Security is deeply integrated directly into the infrastructure:
 ## 🛠️ Tech Stack
 
 * **Languages**: Python, SQL
-* **Frameworks**: FastAPI, Streamlit
-* **Cheminformatics**: RDKit, Streamlit-Ketcher
+* **Frameworks**: FastAPI
+* **Cheminformatics**: RDKit
 * **Database**: PostgreSQL (with mcs07/postgres-rdkit)
 * **Data Processing**: Pandas
 * **Deployment**: Docker, Docker Compose

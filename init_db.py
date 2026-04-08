@@ -15,14 +15,12 @@ def init_db():
         try:
             cur.execute("CREATE EXTENSION IF NOT EXISTS rdkit;")
             conn.commit()
-            logger.info("[OK] RDKit extension enabled.")
+            logger.info("[PASS] RDKit enabled.")
             has_rdkit = True
-        except Exception:
+        except Exception as e:
             conn.rollback()
-            logger.warning(
-                "[WARN] RDKit extension not available. "
-                "Running in 'Python Fallback' mode - advanced SQL structure search will be disabled."
-            )
+            logger.warning(f"[WARN] RDKit not available: {e}")
+            logger.warning("Running in 'Python Fallback' mode - advanced SQL structure search will be disabled.")
             has_rdkit = False
 
         logger.info("Setting up tables...")

@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    container_name: rdkit-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-192602@Bb}
+      POSTGRES_DB: ${DB_NAME:-flaskai}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - custom-network
+    
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: molecule-api
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-flaskai}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-192602@Bb}
+    ports:
+      - "8000:8000"
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    networks:
+      - custom-network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@email.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    networks:
+      - custom-network
+
+volumes:
+  postgres_data:
+
+networks:
+  custom-network:
+    driver: bridge

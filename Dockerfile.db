@@ -1,0 +1,9 @@
+FROM --platform=linux/amd64 mcs07/postgres-rdkit:latest
+
+# We explicitly use the linux/amd64 platform to prevent "exec format error"
+# in environments with mismatched architectures (e.g., Apple Silicon vs. Linux host).
+
+# The base image already has PostgreSQL and the RDKit extension installed.
+
+# Automatically initialize the Postgres DB with the RDKit extension
+COPY init.sql /docker-entrypoint-initdb.d/

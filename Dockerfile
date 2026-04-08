@@ -1,20 +1,21 @@
-FROM mcs07/postgres-rdkit:latest AS base
+FROM --platform=linux/amd64 python:3.11-slim
+
+# We explicitly use linux/amd64 to prevent "exec format error" across environments
 
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
     libxrender1 \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
-
+    
 WORKDIR /app
 
+# Copy requirements and install via pip with no-cache for lightweight build
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy source code
 COPY . .
 
 EXPOSE 8000
-EXPOSE 8501
 
-CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port 8000 & streamlit run App.py --server.port 8501 --server.address 0.0.0.0"]
+CMD uvicorn api:app --host 0.0.0.0 --port 8000

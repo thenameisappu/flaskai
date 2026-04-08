@@ -29,7 +29,6 @@ limiter = Limiter(key_func=get_remote_address)
 # ── FastAPI App ────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Molecule Search API",
-    # Hide sensitive internal details from the OpenAPI error responses.
     openapi_url="/openapi.json",
 )
 

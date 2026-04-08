@@ -36,3 +36,4 @@ def get_connection():
     except Exception as e:
         logger.error("Database connection failed. Check your DB_* environment variables.")
         raise
+    
