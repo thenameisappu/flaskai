@@ -1,7 +1,5 @@
 FROM --platform=linux/amd64 python:3.11-slim
 
-# We explicitly use linux/amd64 to prevent "exec format error" across environments
-
 RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxext6 \
@@ -9,11 +7,9 @@ RUN apt-get update && apt-get install -y \
     
 WORKDIR /app
 
-# Copy requirements and install via pip with no-cache for lightweight build
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code
 COPY . .
 
 EXPOSE 8000
