@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y \
     libxrender1 \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
-    
+
 WORKDIR /app
 
 # Copy requirements and install via pip with no-cache for lightweight build
