@@ -207,3 +207,7 @@ async def similarity_search(
     except Exception as e:
         logger.error("Error in similarity_search: %s", type(e).__name__)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
