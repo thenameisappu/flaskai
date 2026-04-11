@@ -1,61 +1,106 @@
 version: "3.9"
 
+x-db-env: &db-env
+  DB_HOST: db
+  DB_PORT: 5433
+  DB_NAME: ${DB_NAME:-flaskai}
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+
 services:
 
+  # ── PostgreSQL + RDKit ────────────────────────────────────────────────────
   db:
     platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.db
+    image: molecule-db:local # cache-friendly tag for CI
     container_name: rdkit-postgres
-    restart: always
+    restart: unless-stopped # 'always' restarts even after manual stop
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-192602@Bb}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${DB_NAME:-flaskai}
+      # Tune shared_buffers / work_mem via PG* env vars supported by the image
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5433}:5433" # override to avoid local conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - custom-network
-    
+      - backend
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-flaskai}" ]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  # ── FastAPI application ───────────────────────────────────────────────────
   api:
     platform: linux/amd64
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
+      # Pass build-time args if needed (e.g. version label)
+      args:
+        BUILD_ENV: ${BUILD_ENV:-production}
+    image: molecule-api:local
     container_name: molecule-api
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy # wait for DB healthcheck to pass
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-flaskai}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-192602@Bb}
+      <<: *db-env # merge shared DB env block
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Never hard-code secrets here; pull from .env or a secrets manager
     ports:
-      - "8000:8000"
-    command: uvicorn api:app --host 0.0.0.0 --port 8000
+      - "${API_PORT:-8000}:8000"
+    # Exec form avoids a shell wrapper, ensuring signals reach uvicorn
+    command: >
+      uvicorn api:app
+        --host 0.0.0.0
+        --port 8000
+        --workers ${UVICORN_WORKERS:-4}
+        --log-level ${LOG_LEVEL:-info}
     networks:
-      - custom-network
+      - backend
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
+  # ── pgAdmin (development / staging only) ─────────────────────────────────
   pgadmin:
-    image: dpage/pgadmin4
+    image: dpage/pgadmin4:latest
     container_name: pgadmin
-    restart: always
+    restart: unless-stopped
+    profiles:
+      - admin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@email.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?PGADMIN_PASSWORD must be set in .env}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
-      - "8080:80"
+      - "${PGADMIN_PORT:-8080}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     networks:
-      - custom-network
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
 
 networks:
-  custom-network:
+  backend:
     driver: bridge
