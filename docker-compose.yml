@@ -1,8 +1,8 @@
 version: "3.9"
 
 x-db-env: &db-env
-  DB_HOST: localhost
-  DB_PORT: 5433
+  DB_HOST: db
+  DB_PORT: 5432
   DB_NAME: ${DB_NAME:-flaskai}
   DB_USER: ${DB_USER:-postgres}
   DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
@@ -25,7 +25,7 @@ services:
       # Tune shared_buffers / work_mem via PG* env vars supported by the image
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
-      - "${DB_PORT:-5433}:5433" # override to avoid local conflicts
+      - "${DB_PORT:-5432}:5432" # override to avoid local conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
