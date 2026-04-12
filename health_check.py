@@ -112,6 +112,8 @@ def check_db_connection():
 def check_db_connection_json() -> dict:
     """Returns database check as a dict (used by /health endpoint)."""
     load_dotenv()
+
+    # Step 1: Connect
     try:
         conn = psycopg2.connect(
             host=os.getenv("DB_HOST", "localhost"),
@@ -120,20 +122,48 @@ def check_db_connection_json() -> dict:
             password=os.getenv("DB_PASSWORD", ""),
             port=os.getenv("DB_PORT", "5433"),
         )
+    except Exception as e:
+        return {
+            "status": "fail",
+            "failed_step": "connection",
+            "error": f"Could not connect to database: {type(e).__name__}: {e}",
+        }
+
+    # Step 2: Fetch PostgreSQL version
+    try:
         cur = conn.cursor()
         cur.execute("SELECT version();")
         pg_version = str(cur.fetchone()[0])[:60]
+    except Exception as e:
+        conn.close()
+        return {
+            "status": "fail",
+            "failed_step": "postgres_version_query",
+            "error": f"Connected but failed to query version: {type(e).__name__}: {e}",
+        }
+
+    # Step 3: Check RDKit extension
+    try:
         cur.execute("SELECT 1 FROM pg_extension WHERE extname='rdkit';")
         rdkit_enabled = cur.fetchone() is not None
+    except Exception as e:
         cur.close()
         conn.close()
         return {
-            "status": "pass",
-            "postgres_version": pg_version,
-            "rdkit_extension": "enabled" if rdkit_enabled else "not enabled",
+            "status": "fail",
+            "failed_step": "rdkit_extension_check",
+            "error": f"Connected but failed to check RDKit extension: {type(e).__name__}: {e}",
         }
-    except Exception:
-        return {"status": "fail", "error": "Database connection failed"}
+
+    cur.close()
+    conn.close()
+
+    return {
+        "status": "pass",
+        "failed_step": None,
+        "postgres_version": pg_version,
+        "rdkit_extension": "enabled" if rdkit_enabled else "not enabled",
+    }
 
 
 def check_docker_compatibility():
