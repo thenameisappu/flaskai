@@ -18,7 +18,7 @@ from db_search import search_molecules
 from security.auth import get_verify_api_key_dependency
 from security.validation import validate_text_query, validate_smiles, MAX_QUERY_LEN
 
-from health_check import check_env_json, check_dependencies_json, check_db_connection_json, check_docker_compatibility_json, check_file_usage_json, check_coolify_health_json
+from health_check import check_env_json, check_dependencies_json, check_db_connection_json, check_docker_compatibility_json
 
 load_dotenv()
 
@@ -213,18 +213,16 @@ async def similarity_search(
 
 @app.get("/health")
 async def health():
-    env     = check_env_json()
-    deps    = check_dependencies_json()
-    db      = check_db_connection_json()
-    docker  = check_docker_compatibility_json()
-    files   = check_file_usage_json()
-    coolify = check_coolify_health_json()
+    env    = check_env_json()
+    deps   = check_dependencies_json()
+    db     = check_db_connection_json()
+    docker = check_docker_compatibility_json()
  
     overall = (
         "pass"
         if all(
             c.get("status") in ("pass", "warn")
-            for c in [env, deps, db, docker, files, coolify]
+            for c in [env, deps, db, docker]
         )
         else "fail"
     )
@@ -236,7 +234,5 @@ async def health():
             "2_dependencies": deps,
             "3_database":     db,
             "4_docker":       docker,
-            "5_file_usage":   files,
-            "7_coolify":      coolify,
         },
     }
