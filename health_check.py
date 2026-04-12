@@ -79,11 +79,11 @@ def check_db_connection():
     load_dotenv()
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "db"),
+            host=os.getenv("DB_HOST", "localhost"),
             database=os.getenv("DB_NAME", "postgres"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
-            port=os.getenv("DB_PORT", "5432")
+            port=os.getenv("DB_PORT", "5433")
         )
         logger.info("[PASS] Database connection successful!")
 
@@ -116,11 +116,11 @@ def check_db_connection_json() -> dict:
     # Step 1: Connect
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "db"),
+            host=os.getenv("DB_HOST", "localhost"),
             database=os.getenv("DB_NAME", "postgres"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
-            port=os.getenv("DB_PORT", "5432"),
+            port=os.getenv("DB_PORT", "5433"),
         )
     except Exception as e:
         return {
