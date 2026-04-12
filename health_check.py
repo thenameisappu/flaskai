@@ -6,6 +6,9 @@ import shutil
 import logging
 import argparse
 import psycopg2
+import urllib.request
+import urllib.error
+import socket
 from dotenv import load_dotenv
 
 # Configure logging for readable output
@@ -190,6 +193,91 @@ def cleanup(auto_clean=False):
         logger.info("\n(Tip: Run 'python health_check.py --clean' to auto-remove these cache files)")
 
 
+def check_coolify_health():
+    """Coolify Health Check: Validates /health endpoint and docker-compose healthcheck config."""
+    logger.info("\n--- 7. Coolify Health Check Validation ---")
+
+    load_dotenv()
+    all_ok = True
+
+    # ── 7a. Check /health route exists in api.py ───────────────────────────────
+    if os.path.exists("api.py"):
+        with open("api.py", "r", encoding="utf-8") as f:
+            api_content = f.read()
+        if '@app.get("/health")' in api_content or "@app.get('/health')" in api_content:
+            logger.info("[PASS] /health endpoint is defined in api.py.")
+        else:
+            logger.warning("[FAIL] /health endpoint is NOT defined in api.py.")
+            logger.warning('       => Add to api.py:  @app.get("/health")')
+            logger.warning('                           async def health(): return {"status": "ok"}')
+            all_ok = False
+    else:
+        logger.warning("[WARN] api.py not found — cannot verify /health route.")
+        all_ok = False
+
+    # ── 7b. Check docker-compose healthcheck block for the api service ─────────
+    compose_file = None
+    for name in ("docker-compose.yml", "docker-compose.yaml"):
+        if os.path.exists(name):
+            compose_file = name
+            break
+
+    if compose_file:
+        with open(compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+
+        if "healthcheck" in compose_content:
+            if "/health" in compose_content:
+                logger.info("[PASS] docker-compose healthcheck block references /health endpoint.")
+            else:
+                logger.warning("[WARN] docker-compose healthcheck found but does not reference /health.")
+                all_ok = False
+        else:
+            logger.warning("[FAIL] No 'healthcheck' block found in %s.", compose_file)
+            logger.warning("       => Coolify will show 'No health check configured' warning.")
+            logger.warning("       => Add this under your api service in %s:", compose_file)
+            logger.warning("          healthcheck:")
+            logger.warning('            test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]')
+            logger.warning("            interval: 15s")
+            logger.warning("            timeout: 5s")
+            logger.warning("            start_period: 20s")
+            logger.warning("            retries: 3")
+            all_ok = False
+    else:
+        logger.warning("[WARN] No docker-compose.yml / docker-compose.yaml found.")
+        all_ok = False
+
+    # ── 7c. Live reachability check of /health endpoint ────────────────────────
+    api_port = os.getenv("API_PORT", "8000")
+    health_url = f"http://localhost:{api_port}/health"
+    logger.info("       Attempting live check: %s", health_url)
+
+    try:
+        with urllib.request.urlopen(health_url, timeout=5) as resp:
+            body = resp.read().decode("utf-8")
+            if resp.status == 200 and "ok" in body:
+                logger.info("[PASS] /health is live and returned 200 OK. (%s)", body.strip())
+            else:
+                logger.warning("[WARN] /health responded with status %s: %s", resp.status, body.strip())
+                all_ok = False
+    except urllib.error.URLError as e:
+        logger.warning("[SKIP] Could not reach %s — API may not be running locally. (%s)", health_url, e.reason)
+    except socket.timeout:
+        logger.warning("[SKIP] Connection to %s timed out.", health_url)
+
+    # ── 7d. Coolify UI reminder ────────────────────────────────────────────────
+    logger.info("       Coolify UI → Resource → Settings → Health Check:")
+    logger.info("          Path : /health")
+    logger.info("          Port : %s", api_port)
+
+    if all_ok:
+        logger.info("[PASS] Coolify health check configuration looks correct.")
+    else:
+        logger.warning("[WARN] One or more Coolify health check issues found. See above.")
+
+    return all_ok
+
+
 def main():
     parser = argparse.ArgumentParser(description="Full Project Health Analyzer & Cleanup")
     parser.add_argument("--clean", action="store_true", help="Auto-delete safe files like __pycache__ and *.pyc")
@@ -205,6 +293,7 @@ def main():
     check_docker_compatibility()
     check_file_usage()
     cleanup(auto_clean=args.clean)
+    check_coolify_health()
 
     logger.info("\n==================================================")
     logger.info("                 CHECK COMPLETE                   ")
