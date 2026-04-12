@@ -21,7 +21,7 @@ def check_env():
     logger.info("--- 1. Environment Validation ---")
     if not os.path.exists(".env"):
         logger.warning("[WARN] .env file is missing. The system might rely on default or system exports.")
-    
+
     load_dotenv()
     required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
     missing = [v for v in required_vars if not os.getenv(v)]
@@ -30,6 +30,18 @@ def check_env():
         return False
     logger.info("[PASS] All required database environment variables are loaded.")
     return True
+
+
+def check_env_json() -> dict:
+    """Returns environment check as a dict (used by /health endpoint)."""
+    load_dotenv()
+    required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+    missing = [v for v in required_vars if not os.getenv(v)]
+    return {
+        "status": "pass" if not missing else "fail",
+        "env_file_exists": os.path.exists(".env"),
+        "missing_vars": missing,
+    }
 
 
 def check_dependencies():
@@ -45,6 +57,20 @@ def check_dependencies():
             logger.warning("[FAIL] %s is NOT installed.", dep)
             all_ok = False
     return all_ok
+
+
+def check_dependencies_json() -> dict:
+    """Returns dependency check as a dict (used by /health endpoint)."""
+    dependencies = ["rdkit", "psycopg2", "fastapi", "pandas", "uvicorn"]
+    results = {}
+    for dep in dependencies:
+        try:
+            __import__(dep)
+            results[dep] = "installed"
+        except ImportError:
+            results[dep] = "missing"
+    status = "pass" if all(v == "installed" for v in results.values()) else "fail"
+    return {"status": status, "packages": results}
 
 
 def check_db_connection():
@@ -83,11 +109,37 @@ def check_db_connection():
         return False
 
 
+def check_db_connection_json() -> dict:
+    """Returns database check as a dict (used by /health endpoint)."""
+    load_dotenv()
+    try:
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            database=os.getenv("DB_NAME", "postgres"),
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", ""),
+            port=os.getenv("DB_PORT", "5433"),
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT version();")
+        pg_version = str(cur.fetchone()[0])[:60]
+        cur.execute("SELECT 1 FROM pg_extension WHERE extname='rdkit';")
+        rdkit_enabled = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+        return {
+            "status": "pass",
+            "postgres_version": pg_version,
+            "rdkit_extension": "enabled" if rdkit_enabled else "not enabled",
+        }
+    except Exception:
+        return {"status": "fail", "error": "Database connection failed"}
+
+
 def check_docker_compatibility():
     """Docker Compatibility: Validates architecture platforms and execution points."""
     logger.info("\n--- 4. Docker & Deployment Compatibility Check ---")
-    
-    # 1. Dockerfile check
+
     if os.path.exists("Dockerfile"):
         with open("Dockerfile", "r", encoding="utf-8") as f:
             content = f.read()
@@ -95,7 +147,7 @@ def check_docker_compatibility():
                 logger.info("[PASS] Dockerfile architecture explicitly set (Prevents 'exec format error').")
             else:
                 logger.warning("[WARN] Dockerfile architecture NOT specified. May cause 'exec format error' on M1/M2/ARM hosts deploying to Coolify/Linux VMs.")
-            
+
             if "uvicorn api:app" in content:
                 logger.info("[PASS] API entry point (uvicorn api:app) found in Dockerfile.")
             else:
@@ -103,7 +155,6 @@ def check_docker_compatibility():
     else:
         logger.warning("[FAIL] Dockerfile is missing!")
 
-    # 2. docker-compose check
     if os.path.exists("docker-compose.yml"):
         logger.info("[PASS] docker-compose.yml found.")
         with open("docker-compose.yml", "r", encoding="utf-8") as f:
@@ -115,15 +166,49 @@ def check_docker_compatibility():
         logger.warning("[FAIL] docker-compose.yml is missing!")
 
 
+def check_docker_compatibility_json() -> dict:
+    """Returns docker compatibility check as a dict (used by /health endpoint)."""
+    results = {}
+
+    if os.path.exists("Dockerfile"):
+        with open("Dockerfile", "r", encoding="utf-8") as f:
+            content = f.read()
+        results["platform_set"] = (
+            "--platform=linux/amd64" in content or "--platform=linux/arm64" in content
+        )
+        results["entrypoint_ok"] = "uvicorn api:app" in content
+    else:
+        results["dockerfile"] = "missing"
+
+    compose_file = None
+    for name in ("docker-compose.yml", "docker-compose.yaml"):
+        if os.path.exists(name):
+            compose_file = name
+            break
+
+    if compose_file:
+        with open(compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+        results["compose_file"] = compose_file
+        results["depends_on"] = "depends_on" in compose_content
+        results["healthcheck_block"] = "healthcheck" in compose_content
+        results["healthcheck_targets_health_route"] = (
+            "healthcheck" in compose_content and "/health" in compose_content
+        )
+    else:
+        results["compose_file"] = "missing"
+
+    status = "fail" if "missing" in results.values() else "pass"
+    return {"status": status, **results}
+
+
 def check_file_usage():
     """File Usage Analyzer: Scans for unused Python files safely."""
     logger.info("\n--- 5. File Usage Analyzer ---")
-    
-    # Known project entry points that won't be imported but are required
+
     entry_points = {"api.py", "health_check.py", "init_db.py", "seed_data.py"}
-    
     all_py_files = set(glob.glob("*.py"))
-    
+
     imported_modules = set()
     for py_file in all_py_files:
         try:
@@ -137,7 +222,7 @@ def check_file_usage():
                         if node.module:
                             imported_modules.add(node.module.split('.')[0])
         except Exception:
-            pass # Skip unparseable files
+            pass
 
     for py_file in sorted(list(all_py_files)):
         module_name = py_file[:-3]
@@ -149,22 +234,50 @@ def check_file_usage():
             logger.warning(f"[UNUSED/OPTIONAL] {py_file} (Not imported by other local files)")
 
 
+def check_file_usage_json() -> dict:
+    """Returns file usage check as a dict (used by /health endpoint)."""
+    entry_points = {"api.py", "health_check.py", "init_db.py", "seed_data.py"}
+    all_py_files = set(glob.glob("*.py"))
+    imported_modules = set()
+
+    for py_file in all_py_files:
+        try:
+            with open(py_file, "r", encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imported_modules.add(alias.name.split(".")[0])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        imported_modules.add(node.module.split(".")[0])
+        except Exception:
+            pass
+
+    file_status = {}
+    for py_file in sorted(all_py_files):
+        module_name = py_file[:-3]
+        if py_file in entry_points:
+            file_status[py_file] = "required/entry"
+        elif module_name in imported_modules:
+            file_status[py_file] = "required/imported"
+        else:
+            file_status[py_file] = "unused/optional"
+
+    return {"status": "pass", "files": file_status}
+
+
 def cleanup(auto_clean=False):
     """Safe Cleanup: Identifies and optionally removes caches and redundant files."""
     logger.info("\n--- 6. Safe Cleanup Suggestions ---")
     to_remove = []
-    
-    # Traverse project avoiding .git and venv for safe scanning
+
     for root, dirs, files in os.walk("."):
         parts = root.split(os.sep)
         if ".git" in parts or "venv" in parts or "env" in parts:
             continue
-            
-        # Target caches
         if "__pycache__" in dirs:
             to_remove.append(os.path.join(root, "__pycache__"))
-        
-        # Target pyc files
         for f in files:
             if f.endswith(".pyc"):
                 to_remove.append(os.path.join(root, f))
@@ -188,7 +301,7 @@ def cleanup(auto_clean=False):
                 logger.error(f"   [FAIL] Could not delete {item}: {e}")
         else:
             logger.info(f"   [SUGGESTION] Safely Removable Cache/Bytecode: {item}")
-            
+
     if not auto_clean and to_remove:
         logger.info("\n(Tip: Run 'python health_check.py --clean' to auto-remove these cache files)")
 
@@ -200,7 +313,6 @@ def check_coolify_health():
     load_dotenv()
     all_ok = True
 
-    # ── 7a. Check /health route exists in api.py ───────────────────────────────
     if os.path.exists("api.py"):
         with open("api.py", "r", encoding="utf-8") as f:
             api_content = f.read()
@@ -208,14 +320,11 @@ def check_coolify_health():
             logger.info("[PASS] /health endpoint is defined in api.py.")
         else:
             logger.warning("[FAIL] /health endpoint is NOT defined in api.py.")
-            logger.warning('       => Add to api.py:  @app.get("/health")')
-            logger.warning('                           async def health(): return {"status": "ok"}')
             all_ok = False
     else:
         logger.warning("[WARN] api.py not found — cannot verify /health route.")
         all_ok = False
 
-    # ── 7b. Check docker-compose healthcheck block for the api service ─────────
     compose_file = None
     for name in ("docker-compose.yml", "docker-compose.yaml"):
         if os.path.exists(name):
@@ -225,7 +334,6 @@ def check_coolify_health():
     if compose_file:
         with open(compose_file, "r", encoding="utf-8") as f:
             compose_content = f.read()
-
         if "healthcheck" in compose_content:
             if "/health" in compose_content:
                 logger.info("[PASS] docker-compose healthcheck block references /health endpoint.")
@@ -234,20 +342,11 @@ def check_coolify_health():
                 all_ok = False
         else:
             logger.warning("[FAIL] No 'healthcheck' block found in %s.", compose_file)
-            logger.warning("       => Coolify will show 'No health check configured' warning.")
-            logger.warning("       => Add this under your api service in %s:", compose_file)
-            logger.warning("          healthcheck:")
-            logger.warning('            test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]')
-            logger.warning("            interval: 15s")
-            logger.warning("            timeout: 5s")
-            logger.warning("            start_period: 20s")
-            logger.warning("            retries: 3")
             all_ok = False
     else:
         logger.warning("[WARN] No docker-compose.yml / docker-compose.yaml found.")
         all_ok = False
 
-    # ── 7c. Live reachability check of /health endpoint ────────────────────────
     api_port = os.getenv("API_PORT", "8000")
     health_url = f"http://localhost:{api_port}/health"
     logger.info("       Attempting live check: %s", health_url)
@@ -265,7 +364,6 @@ def check_coolify_health():
     except socket.timeout:
         logger.warning("[SKIP] Connection to %s timed out.", health_url)
 
-    # ── 7d. Coolify UI reminder ────────────────────────────────────────────────
     logger.info("       Coolify UI → Resource → Settings → Health Check:")
     logger.info("          Path : /health")
     logger.info("          Port : %s", api_port)
@@ -276,6 +374,54 @@ def check_coolify_health():
         logger.warning("[WARN] One or more Coolify health check issues found. See above.")
 
     return all_ok
+
+
+def check_coolify_health_json() -> dict:
+    """Returns Coolify health check as a dict (used by /health endpoint)."""
+    load_dotenv()
+    results = {}
+    all_ok = True
+
+    if os.path.exists("api.py"):
+        with open("api.py", "r", encoding="utf-8") as f:
+            api_content = f.read()
+        results["health_route_defined"] = (
+            '@app.get("/health")' in api_content or "@app.get('/health')" in api_content
+        )
+        if not results["health_route_defined"]:
+            all_ok = False
+    else:
+        results["health_route_defined"] = False
+        all_ok = False
+
+    compose_file = None
+    for name in ("docker-compose.yml", "docker-compose.yaml"):
+        if os.path.exists(name):
+            compose_file = name
+            break
+
+    if compose_file:
+        with open(compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+        results["compose_healthcheck_exists"] = "healthcheck" in compose_content
+        results["compose_healthcheck_targets_health"] = (
+            "healthcheck" in compose_content and "/health" in compose_content
+        )
+        if not results["compose_healthcheck_exists"]:
+            all_ok = False
+    else:
+        results["compose_file"] = "missing"
+        all_ok = False
+
+    api_port = os.getenv("API_PORT", "8000")
+    results["coolify_ui_setting"] = {
+        "path": "/health",
+        "port": api_port,
+        "note": "Set these in Coolify UI → Resource → Settings → Health Check",
+    }
+
+    results["status"] = "pass" if all_ok else "warn"
+    return results
 
 
 def main():

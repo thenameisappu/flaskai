@@ -18,6 +18,8 @@ from db_search import search_molecules
 from security.auth import get_verify_api_key_dependency
 from security.validation import validate_text_query, validate_smiles, MAX_QUERY_LEN
 
+from health_check import check_env_json, check_dependencies_json, check_db_connection_json, check_docker_compatibility_json, check_file_usage_json, check_coolify_health_json
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
@@ -208,6 +210,33 @@ async def similarity_search(
         logger.error("Error in similarity_search: %s", type(e).__name__)
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    env     = check_env_json()
+    deps    = check_dependencies_json()
+    db      = check_db_connection_json()
+    docker  = check_docker_compatibility_json()
+    files   = check_file_usage_json()
+    coolify = check_coolify_health_json()
+ 
+    overall = (
+        "pass"
+        if all(
+            c.get("status") in ("pass", "warn")
+            for c in [env, deps, db, docker, files, coolify]
+        )
+        else "fail"
+    )
+ 
+    return {
+        "status": overall,
+        "checks": {
+            "1_environment":  env,
+            "2_dependencies": deps,
+            "3_database":     db,
+            "4_docker":       docker,
+            "5_file_usage":   files,
+            "7_coolify":      coolify,
+        },
+    }
