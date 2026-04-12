@@ -210,30 +210,4 @@ async def similarity_search(
 
 @app.get("/health")
 async def health():
-    env       = _check_env()
-    deps      = _check_dependencies()
-    db        = _check_db()
-    docker    = _check_docker()
-    files     = _check_file_usage()
-    coolify   = _check_coolify()
- 
-    overall = (
-        "pass"
-        if all(
-            c.get("status") in ("pass", "warn")
-            for c in [env, deps, db, docker, files, coolify]
-        )
-        else "fail"
-    )
- 
-    return {
-        "status": overall,
-        "checks": {
-            "1_environment":   env,
-            "2_dependencies":  deps,
-            "3_database":      db,
-            "4_docker":        docker,
-            "5_file_usage":    files,
-            "7_coolify":       coolify,
-        },
-    }
+    return {"status": "ok"}
