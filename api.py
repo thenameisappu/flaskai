@@ -210,4 +210,8 @@ async def similarity_search(
 
 @app.get("/health")
 async def health():
+<<<<<<< HEAD
     return {"status": "ok"}
+=======
+    return {"status": "ok"}
+>>>>>>> 4930df49603ed65e2f4ff1af52ffb93621e25df9
