@@ -83,7 +83,7 @@ def check_db_connection():
             database=os.getenv("DB_NAME", "postgres"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
-            port=os.getenv("DB_PORT", "5433")
+            port=os.getenv("DB_PORT", "5432")
         )
         logger.info("[PASS] Database connection successful!")
 
@@ -120,7 +120,7 @@ def check_db_connection_json() -> dict:
             database=os.getenv("DB_NAME", "postgres"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
-            port=os.getenv("DB_PORT", "5433"),
+            port=os.getenv("DB_PORT", "5432"),
         )
     except Exception as e:
         return {
