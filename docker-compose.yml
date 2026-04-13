@@ -1,7 +1,7 @@
 version: "3.9"
 
 x-db-env: &db-env
-  DB_HOST: localhost
+  DB_HOST: db
   DB_PORT: 5432
   DB_NAME: ${DB_NAME:-flaskai}
   DB_USER: ${DB_USER:-postgres}
