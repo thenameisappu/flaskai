@@ -49,10 +49,11 @@ if not _allowed_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=False,  
+    allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -63,6 +64,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         return response
+
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -88,7 +90,6 @@ class StructureQuery(BaseModel):
     @field_validator("smiles")
     @classmethod
     def smiles_must_be_printable(cls, v: str) -> str:
-        """Delegates to central validator; raises ValueError on bad input."""
         return validate_smiles(v)
 
 
@@ -97,7 +98,7 @@ class StructureQuery(BaseModel):
 @app.get("/compounds/search")
 @limiter.limit("60/minute")
 async def search_compounds(
-    request: Request,                                    
+    request: Request,
     q: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="Name / CAS / CID / SMILES"),
     mwMin: Optional[float] = Query(None, ge=0.0, description="Min molecular weight"),
     mwMax: Optional[float] = Query(None, ge=0.0, description="Max molecular weight"),
@@ -215,24 +216,21 @@ async def similarity_search(
 async def health():
     env    = check_env_json()
     deps   = check_dependencies_json()
-    db     = check_db_connection_json()
+    db     = check_db_connection_json()   # now returns { status, summary, steps }
     docker = check_docker_compatibility_json()
- 
+
     overall = (
         "pass"
-        if all(
-            c.get("status") in ("pass", "warn")
-            for c in [env, deps, db, docker]
-        )
+        if all(c.get("status") in ("pass", "warn") for c in [env, deps, db, docker])
         else "fail"
     )
- 
+
     return {
         "status": overall,
         "checks": {
             "1_environment":  env,
             "2_dependencies": deps,
-            "3_database":     db,
+            "3_database":     db,  
             "4_docker":       docker,
         },
     }
