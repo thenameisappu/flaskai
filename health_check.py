@@ -79,7 +79,7 @@ def check_db_connection():
     load_dotenv()
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgresql"),
+            host=os.getenv("DB_HOST", "postgresql-database-igcwckskcokscwcgswws880w"),
             database=os.getenv("DB_NAME", "flaskai"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
@@ -116,7 +116,7 @@ def check_db_connection_json() -> dict:
     # Step 1: Connect
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgresql"),
+            host=os.getenv("DB_HOST", "postgresql-database-igcwckskcokscwcgswws880w"),
             database=os.getenv("DB_NAME", "flaskai"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
