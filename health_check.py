@@ -328,9 +328,8 @@ def check_env():
     required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
-        logger.warning("[FAIL] Missing: %s", ', '.join(missing))
+        logger.warning("[FAIL] env_vars — Missing: %s", ', '.join(missing))
         return False
-    logger.info("[PASS] All required DB env vars present.")
     return True
 
 
@@ -340,9 +339,8 @@ def check_dependencies():
     for dep in dependencies:
         try:
             __import__(dep)
-            logger.info("[PASS] %s installed.", dep)
         except ImportError:
-            logger.warning("[FAIL] %s NOT installed.", dep)
+            logger.warning("[FAIL] dependencies — %s is NOT installed.", dep)
             all_ok = False
     return all_ok
 
@@ -350,14 +348,16 @@ def check_dependencies():
 def check_db_connection():
     result = check_db_connection_json()
     for name, step in result.get("steps", {}).items():
-        icon = "[PASS]" if step["status"] == "pass" else "[FAIL]"
-        logger.info("%s %s — %s", icon, step["label"], step["detail"])
+        if step["status"] == "fail":
+            logger.warning("[FAIL] %s — %s", step["label"], step["detail"])
     return result["status"] == "pass"
 
 
 def check_docker_compatibility():
     r = check_docker_compatibility_json()
-    logger.info("[%s] Docker compatibility", "PASS" if r["status"] == "pass" else "FAIL")
+    if r["status"] == "fail":
+        missing = [k for k, v in r.items() if v == "missing"]
+        logger.warning("[FAIL] docker — Missing: %s", ', '.join(missing))
 
 
 def main():
@@ -366,10 +366,18 @@ def main():
     logger.info("=" * 50)
     logger.info("     MOLECULE API — HEALTH & DEPLOYMENT CHECK")
     logger.info("=" * 50)
-    check_env()
-    check_dependencies()
-    check_db_connection()
+
+    env_ok  = check_env()
+    deps_ok = check_dependencies()
+    db_ok   = check_db_connection()
     check_docker_compatibility()
+
+    overall = all([env_ok, deps_ok, db_ok])
+    if overall:
+        logger.info("[OK] All checks passed.")
+    else:
+        logger.warning("[FAIL] One or more checks failed — see above.")
+
     logger.info("=" * 50)
 
 
