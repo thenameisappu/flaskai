@@ -79,7 +79,7 @@ def check_db_connection():
     load_dotenv()
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgresql-database-igcwckskcokscwcgswws880w"),
+            host=os.getenv("DB_HOST", ""),
             database=os.getenv("DB_NAME", "flaskai"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
@@ -116,7 +116,7 @@ def check_db_connection_json() -> dict:
     # Step 1: Connect
     try:
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "postgresql-database-igcwckskcokscwcgswws880w"),
+            host=os.getenv("DB_HOST", ""),
             database=os.getenv("DB_NAME", "flaskai"),
             user=os.getenv("DB_USER", "postgres"),
             password=os.getenv("DB_PASSWORD", ""),
@@ -197,16 +197,19 @@ def check_docker_compatibility():
 
 
 def check_docker_compatibility_json() -> dict:
-    """Returns docker compatibility check as a dict (used by /health endpoint)."""
     results = {}
 
-    if os.path.exists("Dockerfile"):
-        with open("Dockerfile", "r", encoding="utf-8") as f:
-            content = f.read()
+    dockerfiles = [f for f in ("Dockerfile", "Dockerfile.db") if os.path.exists(f)]
+    combined_dockerfile_content = ""
+    for df in dockerfiles:
+        with open(df, "r", encoding="utf-8") as f:
+            combined_dockerfile_content += f.read()
+
+    if dockerfiles:
         results["platform_set"] = (
-            "--platform=linux/amd64" in content or "--platform=linux/arm64" in content
+            "--platform=linux/amd64" in combined_dockerfile_content
+            or "--platform=linux/arm64" in combined_dockerfile_content
         )
-        results["entrypoint_ok"] = "uvicorn api:app" in content
     else:
         results["dockerfile"] = "missing"
 
@@ -224,6 +227,11 @@ def check_docker_compatibility_json() -> dict:
         results["healthcheck_block"] = "healthcheck" in compose_content
         results["healthcheck_targets_health_route"] = (
             "healthcheck" in compose_content and "/health" in compose_content
+        )
+        # Entrypoint can live in Dockerfile CMD *or* compose command: override
+        results["entrypoint_ok"] = (
+            "uvicorn api:app" in combined_dockerfile_content
+            or "uvicorn api:app" in compose_content
         )
     else:
         results["compose_file"] = "missing"
