@@ -28,6 +28,11 @@ def _step(label: str, ok: bool, detail: str = "") -> dict:
     return {"status": "pass" if ok else "fail", "detail": detail, "label": label}
 
 
+def _filter_failed(steps: dict) -> dict:
+    """Return only the steps that failed."""
+    return {k: v for k, v in steps.items() if v["status"] == "fail"}
+
+
 # ── Individual diagnostic steps ────────────────────────────────────────────────
 
 def _check_env_vars(cfg: dict) -> dict:
@@ -197,36 +202,31 @@ def _check_table_row_count(conn) -> dict:
 def check_db_connection_json() -> dict:
     """
     Runs all DB checks in sequence, stopping at the first failure.
-    Returns a dict with 'status', 'steps', and a top-level 'summary'.
+    Returns only failed steps in the response.
     """
     cfg = _db_cfg()
     steps = {}
 
-    # Step 1 — env vars
     s1 = _check_env_vars(cfg)
     steps["1_env_vars"] = s1
     if s1["status"] == "fail":
-        return {"status": "fail", "summary": s1["detail"], "steps": steps}
+        return {"status": "fail", "summary": s1["detail"], "failed_steps": _filter_failed(steps)}
 
-    # Step 2 — DNS
     s2 = _check_host_dns(cfg["host"], cfg["port"])
     steps["2_host_dns"] = s2
     if s2["status"] == "fail":
-        return {"status": "fail", "summary": s2["detail"], "steps": steps}
+        return {"status": "fail", "summary": s2["detail"], "failed_steps": _filter_failed(steps)}
 
-    # Step 3 — port
     s3 = _check_port_reachable(cfg["host"], cfg["port"])
     steps["3_port_reachable"] = s3
     if s3["status"] == "fail":
-        return {"status": "fail", "summary": s3["detail"], "steps": steps}
+        return {"status": "fail", "summary": s3["detail"], "failed_steps": _filter_failed(steps)}
 
-    # Step 4 — auth + db name
     s4 = _check_db_connect(cfg)
     steps["4_db_connect"] = s4
     if s4["status"] == "fail":
-        return {"status": "fail", "summary": s4["detail"], "steps": steps}
+        return {"status": "fail", "summary": s4["detail"], "failed_steps": _filter_failed(steps)}
 
-    # Steps 5-8 require an open connection
     try:
         conn = psycopg2.connect(
             host=cfg["host"], port=cfg["port"], dbname=cfg["dbname"],
@@ -248,43 +248,49 @@ def check_db_connection_json() -> dict:
         conn.close()
     except Exception as e:
         steps["5_open_connection"] = _step("open_connection", False, str(e))
-        return {"status": "fail", "summary": str(e), "steps": steps}
+        return {"status": "fail", "summary": str(e), "failed_steps": _filter_failed(steps)}
 
-    # Overall status: fail if ANY step failed
-    failed = [k for k, v in steps.items() if v["status"] == "fail"]
+    failed = _filter_failed(steps)
     overall = "fail" if failed else "pass"
     summary = (
         "All database checks passed."
         if not failed
-        else f"Failed steps: {', '.join(failed)}"
+        else f"Failed steps: {', '.join(failed.keys())}"
     )
-    return {"status": overall, "summary": summary, "steps": steps}
+
+    result = {"status": overall, "summary": summary}
+    if failed:
+        result["failed_steps"] = failed
+    return result
 
 
-# ── Remaining /health check functions (unchanged signatures) ───────────────────
+# ── Remaining /health check functions ─────────────────────────────────────────
 
 def check_env_json() -> dict:
     load_dotenv()
     required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
     missing = [v for v in required_vars if not os.getenv(v)]
-    return {
+    result = {
         "status": "pass" if not missing else "fail",
         "env_file_exists": os.path.exists(".env"),
-        "missing_vars": missing,
     }
+    if missing:
+        result["missing_vars"] = missing
+    return result
 
 
 def check_dependencies_json() -> dict:
     dependencies = ["rdkit", "psycopg2", "fastapi", "pandas", "uvicorn"]
-    results = {}
+    missing = {}
     for dep in dependencies:
         try:
             __import__(dep)
-            results[dep] = "installed"
         except ImportError:
-            results[dep] = "missing"
-    status = "pass" if all(v == "installed" for v in results.values()) else "fail"
-    return {"status": status, "packages": results}
+            missing[dep] = "missing"
+    result = {"status": "pass" if not missing else "fail"}
+    if missing:
+        result["missing_packages"] = missing
+    return result
 
 
 def check_docker_compatibility_json() -> dict:
@@ -318,7 +324,11 @@ def check_docker_compatibility_json() -> dict:
         results["compose_file"] = "missing"
 
     status = "fail" if "missing" in results.values() else "pass"
-    return {"status": status, **results}
+    failed = {k: v for k, v in results.items() if v == "missing" or v is False}
+    result = {"status": status}
+    if failed:
+        result["failures"] = failed
+    return result
 
 
 # ── CLI runner ─────────────────────────────────────────────────────────────────
@@ -347,17 +357,16 @@ def check_dependencies():
 
 def check_db_connection():
     result = check_db_connection_json()
-    for name, step in result.get("steps", {}).items():
-        if step["status"] == "fail":
-            logger.warning("[FAIL] %s — %s", step["label"], step["detail"])
+    for name, step in result.get("failed_steps", {}).items():
+        logger.warning("[FAIL] %s — %s", step["label"], step["detail"])
     return result["status"] == "pass"
 
 
 def check_docker_compatibility():
     r = check_docker_compatibility_json()
     if r["status"] == "fail":
-        missing = [k for k, v in r.items() if v == "missing"]
-        logger.warning("[FAIL] docker — Missing: %s", ', '.join(missing))
+        for k, v in r.get("failures", {}).items():
+            logger.warning("[FAIL] docker — %s: %s", k, v)
 
 
 def main():
