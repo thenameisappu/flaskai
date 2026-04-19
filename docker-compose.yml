@@ -3,7 +3,7 @@ version: "3.9"
 x-db-env: &db-env
    DB_HOST: ${DB_HOST}
   DB_PORT: 5433
-  DB_NAME: ${DB_NAME:-flaskai}
+  DB_NAME: ${DB_NAME:-postgres}
   DB_USER: ${DB_USER:-postgres}
   DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
 
@@ -21,7 +21,7 @@ services:
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
-      POSTGRES_DB: ${DB_NAME:-flaskai}
+      POSTGRES_DB: ${DB_NAME:-postgres}
       # Tune shared_buffers / work_mem via PG* env vars supported by the image
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
