@@ -1,4 +1,4 @@
-FROM python:3.11-slim AS builder
+FROM --platform=linux/amd64 python:3.11-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -13,7 +13,7 @@ RUN python -m venv /venv \
     && /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 
-FROM python:3.11-slim AS runtime
+FROM --platform=linux/amd64 python:3.11-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
