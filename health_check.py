@@ -14,7 +14,6 @@ load_dotenv()
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _db_cfg() -> dict:
-    """Read DB config purely from environment — no hardcoded fallbacks."""
     return {
         "host":     os.getenv("DB_HOST", ""),
         "port":     os.getenv("DB_PORT", ""),
@@ -29,7 +28,6 @@ def _step(label: str, ok: bool, detail: str = "") -> dict:
 
 
 def _filter_failed(steps: dict) -> dict:
-    """Return only the steps that failed."""
     return {k: v for k, v in steps.items() if v["status"] == "fail"}
 
 
@@ -126,27 +124,8 @@ def _check_pg_version(conn) -> dict:
         return _step("pg_version", False, f"Could not query version: {e}")
 
 
-def _check_rdkit_extension(conn) -> dict:
-    """Step 6 — Is the RDKit extension enabled in this database?"""
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM pg_extension WHERE extname='rdkit';")
-        enabled = cur.fetchone() is not None
-        cur.close()
-        if enabled:
-            return _step("rdkit_extension", True, "RDKit extension is enabled.")
-        return _step(
-            "rdkit_extension",
-            False,
-            "RDKit extension is NOT enabled. Run: CREATE EXTENSION IF NOT EXISTS rdkit; "
-            "or rebuild with mcs07/postgres-rdkit image."
-        )
-    except Exception as e:
-        return _step("rdkit_extension", False, f"Error checking RDKit: {e}")
-
-
 def _check_molecules_table(conn) -> dict:
-    """Step 7 — Does the configured MOLECULES_TABLE exist?"""
+    """Step 6 — Does the configured MOLECULES_TABLE exist?"""
     table = os.getenv("MOLECULES_TABLE", "").strip().lower()
     if not table:
         return _step(
@@ -156,10 +135,7 @@ def _check_molecules_table(conn) -> dict:
         )
     try:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT to_regclass(%s);",
-            (table,)
-        )
+        cur.execute("SELECT to_regclass(%s);", (table,))
         exists = cur.fetchone()[0] is not None
         cur.close()
         if exists:
@@ -175,7 +151,7 @@ def _check_molecules_table(conn) -> dict:
 
 
 def _check_table_row_count(conn) -> dict:
-    """Step 8 — How many rows are in the molecules table (quick data check)?"""
+    """Step 7 — How many rows are in the molecules table?"""
     table = os.getenv("MOLECULES_TABLE", "").strip().lower()
     if not table:
         return _step("row_count", False, "MOLECULES_TABLE not set, skipping row count.")
@@ -200,10 +176,6 @@ def _check_table_row_count(conn) -> dict:
 # ── Public API (used by FastAPI /health endpoint) ──────────────────────────────
 
 def check_db_connection_json() -> dict:
-    """
-    Runs all DB checks in sequence, stopping at the first failure.
-    Returns only failed steps in the response.
-    """
     cfg = _db_cfg()
     steps = {}
 
@@ -236,14 +208,11 @@ def check_db_connection_json() -> dict:
         s5 = _check_pg_version(conn)
         steps["5_pg_version"] = s5
 
-        s6 = _check_rdkit_extension(conn)
-        steps["6_rdkit_extension"] = s6
+        s6 = _check_molecules_table(conn)
+        steps["6_molecules_table"] = s6
 
-        s7 = _check_molecules_table(conn)
-        steps["7_molecules_table"] = s7
-
-        s8 = _check_table_row_count(conn)
-        steps["8_row_count"] = s8
+        s7 = _check_table_row_count(conn)
+        steps["7_row_count"] = s7
 
         conn.close()
     except Exception as e:
