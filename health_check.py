@@ -1,214 +1,393 @@
 import os
 import sys
-import glob
-import ast
-import shutil
+import socket
 import logging
 import argparse
 import psycopg2
 from dotenv import load_dotenv
 
-# Configure logging for readable output
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _db_cfg() -> dict:
+    """Read DB config purely from environment — no hardcoded fallbacks."""
+    return {
+        "host":     os.getenv("DB_HOST", ""),
+        "port":     os.getenv("DB_PORT", ""),
+        "dbname":   os.getenv("DB_NAME", ""),
+        "user":     os.getenv("DB_USER", ""),
+        "password": os.getenv("DB_PASSWORD", ""),
+    }
+
+
+def _step(label: str, ok: bool, detail: str = "") -> dict:
+    return {"status": "pass" if ok else "fail", "detail": detail, "label": label}
+
+
+def _filter_failed(steps: dict) -> dict:
+    """Return only the steps that failed."""
+    return {k: v for k, v in steps.items() if v["status"] == "fail"}
+
+
+# ── Individual diagnostic steps ────────────────────────────────────────────────
+
+def _check_env_vars(cfg: dict) -> dict:
+    """Step 1 — Are all required env vars present and non-empty?"""
+    missing = [k for k, v in cfg.items() if not v]
+    if missing:
+        return _step(
+            "env_vars",
+            False,
+            f"Missing or empty environment variables: {', '.join(missing).upper()}. "
+            "Check your .env file."
+        )
+    return _step("env_vars", True, "All DB environment variables are set.")
+
+
+def _check_host_dns(host: str, port: str) -> dict:
+    """Step 2 — Can the hostname be resolved via DNS?"""
+    try:
+        resolved = socket.getaddrinfo(host, None)
+        ip = resolved[0][4][0]
+        return _step("host_dns", True, f"Host '{host}' resolved to {ip}.")
+    except socket.gaierror as e:
+        return _step(
+            "host_dns",
+            False,
+            f"Cannot resolve host '{host}': {e}. "
+            "Check DB_HOST in your .env — it may be a wrong hostname, typo, or the DB container is not running."
+        )
+
+
+def _check_port_reachable(host: str, port: str) -> dict:
+    """Step 3 — Is the port open / reachable (TCP connect)?"""
+    try:
+        p = int(port)
+    except (ValueError, TypeError):
+        return _step("port_reachable", False, f"DB_PORT '{port}' is not a valid integer.")
+
+    try:
+        with socket.create_connection((host, p), timeout=5):
+            pass
+        return _step("port_reachable", True, f"Port {p} on '{host}' is open.")
+    except (ConnectionRefusedError, OSError) as e:
+        return _step(
+            "port_reachable",
+            False,
+            f"Cannot reach {host}:{p} — {e}. "
+            "Ensure the database container/service is running and the port is correct (DB_PORT)."
+        )
+
+
+def _check_db_connect(cfg: dict) -> dict:
+    """Step 4 — Can psycopg2 open a connection (auth + database name)?"""
+    try:
+        conn = psycopg2.connect(
+            host=cfg["host"],
+            port=cfg["port"],
+            dbname=cfg["dbname"],
+            user=cfg["user"],
+            password=cfg["password"],
+            connect_timeout=5,
+        )
+        conn.close()
+        return _step(
+            "db_connect",
+            True,
+            f"Connected to database '{cfg['dbname']}' as user '{cfg['user']}'."
+        )
+    except psycopg2.OperationalError as e:
+        err = str(e).strip().replace("\n", " ")
+        hint = ""
+        if "password authentication failed" in err:
+            hint = " → DB_PASSWORD is wrong."
+        elif "database" in err and "does not exist" in err:
+            hint = f" → Database '{cfg['dbname']}' does not exist. Check DB_NAME."
+        elif "role" in err and "does not exist" in err:
+            hint = f" → User '{cfg['user']}' does not exist. Check DB_USER."
+        return _step("db_connect", False, f"Connection failed: {err}.{hint}")
+    except Exception as e:
+        return _step("db_connect", False, f"Unexpected error: {type(e).__name__}: {e}")
+
+
+def _check_pg_version(conn) -> dict:
+    """Step 5 — Query PostgreSQL version (sanity check)."""
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT version();")
+        version = str(cur.fetchone()[0])[:80]
+        cur.close()
+        return _step("pg_version", True, version)
+    except Exception as e:
+        return _step("pg_version", False, f"Could not query version: {e}")
+
+
+def _check_rdkit_extension(conn) -> dict:
+    """Step 6 — Is the RDKit extension enabled in this database?"""
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_extension WHERE extname='rdkit';")
+        enabled = cur.fetchone() is not None
+        cur.close()
+        if enabled:
+            return _step("rdkit_extension", True, "RDKit extension is enabled.")
+        return _step(
+            "rdkit_extension",
+            False,
+            "RDKit extension is NOT enabled. Run: CREATE EXTENSION IF NOT EXISTS rdkit; "
+            "or rebuild with mcs07/postgres-rdkit image."
+        )
+    except Exception as e:
+        return _step("rdkit_extension", False, f"Error checking RDKit: {e}")
+
+
+def _check_molecules_table(conn) -> dict:
+    """Step 7 — Does the configured MOLECULES_TABLE exist?"""
+    table = os.getenv("MOLECULES_TABLE", "").strip().lower()
+    if not table:
+        return _step(
+            "molecules_table",
+            False,
+            "MOLECULES_TABLE is not set in your .env file."
+        )
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT to_regclass(%s);",
+            (table,)
+        )
+        exists = cur.fetchone()[0] is not None
+        cur.close()
+        if exists:
+            return _step("molecules_table", True, f"Table '{table}' exists.")
+        return _step(
+            "molecules_table",
+            False,
+            f"Table '{table}' does NOT exist in database '{os.getenv('DB_NAME')}'. "
+            "Run init_db.py to create it, or check MOLECULES_TABLE in your .env."
+        )
+    except Exception as e:
+        return _step("molecules_table", False, f"Error checking table: {e}")
+
+
+def _check_table_row_count(conn) -> dict:
+    """Step 8 — How many rows are in the molecules table (quick data check)?"""
+    table = os.getenv("MOLECULES_TABLE", "").strip().lower()
+    if not table:
+        return _step("row_count", False, "MOLECULES_TABLE not set, skipping row count.")
+    try:
+        import re
+        if not re.match(r'^[a-z0-9_]+$', table):
+            return _step("row_count", False, f"Invalid table name format: '{table}'.")
+        from psycopg2 import sql as psycopg2_sql
+        cur = conn.cursor()
+        cur.execute(psycopg2_sql.SQL("SELECT COUNT(*) FROM {}").format(psycopg2_sql.Identifier(table)))
+        count = cur.fetchone()[0]
+        cur.close()
+        ok = count > 0
+        msg = f"Table '{table}' contains {count} row(s)."
+        if not ok:
+            msg += " Table is empty — run seed_data.py to populate it."
+        return _step("row_count", ok, msg)
+    except Exception as e:
+        return _step("row_count", False, f"Error counting rows: {e}")
+
+
+# ── Public API (used by FastAPI /health endpoint) ──────────────────────────────
+
+def check_db_connection_json() -> dict:
+    """
+    Runs all DB checks in sequence, stopping at the first failure.
+    Returns only failed steps in the response.
+    """
+    cfg = _db_cfg()
+    steps = {}
+
+    s1 = _check_env_vars(cfg)
+    steps["1_env_vars"] = s1
+    if s1["status"] == "fail":
+        return {"status": "fail", "summary": s1["detail"], "failed_steps": _filter_failed(steps)}
+
+    s2 = _check_host_dns(cfg["host"], cfg["port"])
+    steps["2_host_dns"] = s2
+    if s2["status"] == "fail":
+        return {"status": "fail", "summary": s2["detail"], "failed_steps": _filter_failed(steps)}
+
+    s3 = _check_port_reachable(cfg["host"], cfg["port"])
+    steps["3_port_reachable"] = s3
+    if s3["status"] == "fail":
+        return {"status": "fail", "summary": s3["detail"], "failed_steps": _filter_failed(steps)}
+
+    s4 = _check_db_connect(cfg)
+    steps["4_db_connect"] = s4
+    if s4["status"] == "fail":
+        return {"status": "fail", "summary": s4["detail"], "failed_steps": _filter_failed(steps)}
+
+    try:
+        conn = psycopg2.connect(
+            host=cfg["host"], port=cfg["port"], dbname=cfg["dbname"],
+            user=cfg["user"], password=cfg["password"], connect_timeout=5,
+        )
+
+        s5 = _check_pg_version(conn)
+        steps["5_pg_version"] = s5
+
+        s6 = _check_rdkit_extension(conn)
+        steps["6_rdkit_extension"] = s6
+
+        s7 = _check_molecules_table(conn)
+        steps["7_molecules_table"] = s7
+
+        s8 = _check_table_row_count(conn)
+        steps["8_row_count"] = s8
+
+        conn.close()
+    except Exception as e:
+        steps["5_open_connection"] = _step("open_connection", False, str(e))
+        return {"status": "fail", "summary": str(e), "failed_steps": _filter_failed(steps)}
+
+    failed = _filter_failed(steps)
+    overall = "fail" if failed else "pass"
+    summary = (
+        "All database checks passed."
+        if not failed
+        else f"Failed steps: {', '.join(failed.keys())}"
+    )
+
+    result = {"status": overall, "summary": summary}
+    if failed:
+        result["failed_steps"] = failed
+    return result
+
+
+# ── Remaining /health check functions ─────────────────────────────────────────
+
+def check_env_json() -> dict:
+    load_dotenv()
+    required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+    missing = [v for v in required_vars if not os.getenv(v)]
+    result = {
+        "status": "pass" if not missing else "fail",
+        "env_file_exists": os.path.exists(".env"),
+    }
+    if missing:
+        result["missing_vars"] = missing
+    return result
+
+
+def check_dependencies_json() -> dict:
+    dependencies = ["rdkit", "psycopg2", "fastapi", "pandas", "uvicorn"]
+    missing = {}
+    for dep in dependencies:
+        try:
+            __import__(dep)
+        except ImportError:
+            missing[dep] = "missing"
+    result = {"status": "pass" if not missing else "fail"}
+    if missing:
+        result["missing_packages"] = missing
+    return result
+
+
+def check_docker_compatibility_json() -> dict:
+    results = {}
+    if os.path.exists("Dockerfile"):
+        with open("Dockerfile", "r", encoding="utf-8") as f:
+            content = f.read()
+        results["platform_set"] = (
+            "--platform=linux/amd64" in content or "--platform=linux/arm64" in content
+        )
+        results["entrypoint_ok"] = "uvicorn api:app" in content
+    else:
+        results["dockerfile"] = "missing"
+
+    compose_file = None
+    for name in ("docker-compose.yml", "docker-compose.yaml"):
+        if os.path.exists(name):
+            compose_file = name
+            break
+
+    if compose_file:
+        with open(compose_file, "r", encoding="utf-8") as f:
+            compose_content = f.read()
+        results["compose_file"] = compose_file
+        results["depends_on"] = "depends_on" in compose_content
+        results["healthcheck_block"] = "healthcheck" in compose_content
+        results["healthcheck_targets_health_route"] = (
+            "healthcheck" in compose_content and "/health" in compose_content
+        )
+    else:
+        results["compose_file"] = "missing"
+
+    status = "fail" if "missing" in results.values() else "pass"
+    failed = {k: v for k, v in results.items() if v == "missing" or v is False}
+    result = {"status": status}
+    if failed:
+        result["failures"] = failed
+    return result
+
+
+# ── CLI runner ─────────────────────────────────────────────────────────────────
 
 def check_env():
-    """Environment Validation: Checks if .env exists and has required keys."""
-    logger.info("--- 1. Environment Validation ---")
-    if not os.path.exists(".env"):
-        logger.warning("[WARN] .env file is missing. The system might rely on default or system exports.")
-    
     load_dotenv()
     required_vars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"]
     missing = [v for v in required_vars if not os.getenv(v)]
     if missing:
-        logger.warning("[FAIL] Missing environment variables: %s", ', '.join(missing))
+        logger.warning("[FAIL] env_vars — Missing: %s", ', '.join(missing))
         return False
-    logger.info("[PASS] All required database environment variables are loaded.")
     return True
 
 
 def check_dependencies():
-    """Deployment Readiness: Checks if Python dependencies are installed."""
-    logger.info("\n--- 2. Python Dependency Check ---")
     dependencies = ["rdkit", "psycopg2", "fastapi", "pandas", "uvicorn"]
     all_ok = True
     for dep in dependencies:
         try:
             __import__(dep)
-            logger.info("[PASS] %s is installed.", dep)
         except ImportError:
-            logger.warning("[FAIL] %s is NOT installed.", dep)
+            logger.warning("[FAIL] dependencies — %s is NOT installed.", dep)
             all_ok = False
     return all_ok
 
 
 def check_db_connection():
-    """Database Functionality: Verifies PostgreSQL connection and RDKit extension."""
-    logger.info("\n--- 3. Database Integrity Check ---")
-    load_dotenv()
-    try:
-        conn = psycopg2.connect(
-            host=os.getenv("DB_HOST", "localhost"),
-            database=os.getenv("DB_NAME", "postgres"),
-            user=os.getenv("DB_USER", "postgres"),
-            password=os.getenv("DB_PASSWORD", ""),
-            port=os.getenv("DB_PORT", "5432")
-        )
-        logger.info("[PASS] Database connection successful!")
-
-        cur = conn.cursor()
-        cur.execute("SELECT version();")
-        version_str = str(cur.fetchone()[0])[:60]
-        logger.info("       => PostgreSQL Version: %s", version_str)
-
-        try:
-            cur.execute("SELECT * FROM pg_extension WHERE extname = 'rdkit';")
-            if cur.fetchone():
-                logger.info("       => [PASS] RDKit extension is enabled in the database.")
-            else:
-                logger.warning("       => [WARN] RDKit extension is NOT enabled in this database.")
-        except Exception as e:
-            logger.warning(f"       => [WARN] Error checking RDKit extension: {e}")
-
-        cur.close()
-        conn.close()
-        return True
-    except Exception as e:
-        logger.error("[FAIL] Database connection failed. Verify DB_* variables and DB status.")
-        return False
+    result = check_db_connection_json()
+    for name, step in result.get("failed_steps", {}).items():
+        logger.warning("[FAIL] %s — %s", step["label"], step["detail"])
+    return result["status"] == "pass"
 
 
 def check_docker_compatibility():
-    """Docker Compatibility: Validates architecture platforms and execution points."""
-    logger.info("\n--- 4. Docker & Deployment Compatibility Check ---")
-    
-    # 1. Dockerfile check
-    if os.path.exists("Dockerfile"):
-        with open("Dockerfile", "r", encoding="utf-8") as f:
-            content = f.read()
-            if "--platform=linux/amd64" in content or "--platform=linux/arm64" in content:
-                logger.info("[PASS] Dockerfile architecture explicitly set (Prevents 'exec format error').")
-            else:
-                logger.warning("[WARN] Dockerfile architecture NOT specified. May cause 'exec format error' on M1/M2/ARM hosts deploying to Coolify/Linux VMs.")
-            
-            if "uvicorn api:app" in content:
-                logger.info("[PASS] API entry point (uvicorn api:app) found in Dockerfile.")
-            else:
-                logger.warning("[WARN] uvicorn api:app not found in Dockerfile CMD. Ensure correct startup command.")
-    else:
-        logger.warning("[FAIL] Dockerfile is missing!")
-
-    # 2. docker-compose check
-    if os.path.exists("docker-compose.yml"):
-        logger.info("[PASS] docker-compose.yml found.")
-        with open("docker-compose.yml", "r", encoding="utf-8") as f:
-            if "depends_on" in f.read():
-                logger.info("[PASS] 'depends_on' relation exists in docker-compose.yml.")
-            else:
-                logger.warning("[WARN] No 'depends_on' in docker-compose.yml, API might boot before DB.")
-    else:
-        logger.warning("[FAIL] docker-compose.yml is missing!")
-
-
-def check_file_usage():
-    """File Usage Analyzer: Scans for unused Python files safely."""
-    logger.info("\n--- 5. File Usage Analyzer ---")
-    
-    # Known project entry points that won't be imported but are required
-    entry_points = {"api.py", "health_check.py", "init_db.py", "seed_data.py"}
-    
-    all_py_files = set(glob.glob("*.py"))
-    
-    imported_modules = set()
-    for py_file in all_py_files:
-        try:
-            with open(py_file, 'r', encoding='utf-8') as f:
-                tree = ast.parse(f.read())
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for alias in node.names:
-                            imported_modules.add(alias.name.split('.')[0])
-                    elif isinstance(node, ast.ImportFrom):
-                        if node.module:
-                            imported_modules.add(node.module.split('.')[0])
-        except Exception:
-            pass # Skip unparseable files
-
-    for py_file in sorted(list(all_py_files)):
-        module_name = py_file[:-3]
-        if py_file in entry_points:
-            logger.info(f"[REQUIRED/ENTRY] {py_file} (Core Script)")
-        elif module_name in imported_modules:
-            logger.info(f"[REQUIRED/MODULE] {py_file} (Imported File)")
-        else:
-            logger.warning(f"[UNUSED/OPTIONAL] {py_file} (Not imported by other local files)")
-
-
-def cleanup(auto_clean=False):
-    """Safe Cleanup: Identifies and optionally removes caches and redundant files."""
-    logger.info("\n--- 6. Safe Cleanup Suggestions ---")
-    to_remove = []
-    
-    # Traverse project avoiding .git and venv for safe scanning
-    for root, dirs, files in os.walk("."):
-        parts = root.split(os.sep)
-        if ".git" in parts or "venv" in parts or "env" in parts:
-            continue
-            
-        # Target caches
-        if "__pycache__" in dirs:
-            to_remove.append(os.path.join(root, "__pycache__"))
-        
-        # Target pyc files
-        for f in files:
-            if f.endswith(".pyc"):
-                to_remove.append(os.path.join(root, f))
-
-    if os.path.exists("venv") or os.path.exists("env"):
-        logger.info("[SUGGESTION] Python virtual environment ('venv/' or 'env/') found. This is optional for Docker deployments but required locally.")
-
-    if not to_remove:
-        logger.info("[PASS] No cleanup needed. Project is clean.")
-        return
-
-    for item in to_remove:
-        if auto_clean:
-            try:
-                if os.path.isdir(item):
-                    shutil.rmtree(item)
-                else:
-                    os.remove(item)
-                logger.info(f"   [DELETED] {item}")
-            except Exception as e:
-                logger.error(f"   [FAIL] Could not delete {item}: {e}")
-        else:
-            logger.info(f"   [SUGGESTION] Safely Removable Cache/Bytecode: {item}")
-            
-    if not auto_clean and to_remove:
-        logger.info("\n(Tip: Run 'python health_check.py --clean' to auto-remove these cache files)")
+    r = check_docker_compatibility_json()
+    if r["status"] == "fail":
+        for k, v in r.get("failures", {}).items():
+            logger.warning("[FAIL] docker — %s: %s", k, v)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Full Project Health Analyzer & Cleanup")
-    parser.add_argument("--clean", action="store_true", help="Auto-delete safe files like __pycache__ and *.pyc")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="FlaskAI Health Check")
+    parser.parse_args()
+    logger.info("=" * 50)
+    logger.info("     MOLECULE API — HEALTH & DEPLOYMENT CHECK")
+    logger.info("=" * 50)
 
-    logger.info("==================================================")
-    logger.info("        FLASK-AI HEALTH & DEPLOYMENT CHECK        ")
-    logger.info("==================================================")
-
-    check_env()
-    check_dependencies()
-    check_db_connection()
+    env_ok  = check_env()
+    deps_ok = check_dependencies()
+    db_ok   = check_db_connection()
     check_docker_compatibility()
-    check_file_usage()
-    cleanup(auto_clean=args.clean)
 
-    logger.info("\n==================================================")
-    logger.info("                 CHECK COMPLETE                   ")
-    logger.info("==================================================")
+    overall = all([env_ok, deps_ok, db_ok])
+    if overall:
+        logger.info("[OK] All checks passed.")
+    else:
+        logger.warning("[FAIL] One or more checks failed — see above.")
+
+    logger.info("=" * 50)
 
 
 if __name__ == "__main__":
