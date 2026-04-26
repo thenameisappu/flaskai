@@ -18,7 +18,12 @@ from db_search import search_molecules
 from security.auth import get_verify_api_key_dependency
 from security.validation import validate_text_query, validate_smiles, MAX_QUERY_LEN
 
-from health_check import check_env_json, check_dependencies_json, check_db_connection_json, check_docker_compatibility_json
+from health_check import (
+    check_env_json,
+    check_dependencies_json,
+    check_db_connection_json,
+    check_docker_compatibility_json,
+)
 
 load_dotenv()
 
@@ -29,11 +34,7 @@ logger = logging.getLogger(__name__)
 limiter = Limiter(key_func=get_remote_address)
 
 # ── FastAPI App ────────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="Molecule Search API",
-    openapi_url="/openapi.json",
-)
-
+app = FastAPI(title="Molecule Search API", openapi_url="/openapi.json")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -42,8 +43,7 @@ _raw_origins = os.getenv("ALLOWED_ORIGINS", "")
 _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 if not _allowed_origins:
     logger.warning(
-        "ALLOWED_ORIGINS is not set — CORS will block all cross-origin requests. "
-        "Add ALLOWED_ORIGINS=http://your-frontend-host to .env"
+        "ALLOWED_ORIGINS is not set — CORS will block all cross-origin requests."
     )
 
 app.add_middleware(
@@ -68,11 +68,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# ── Auth Dependency ────────────────────────────────────────────────────────────
+# ── Auth ───────────────────────────────────────────────────────────────────────
 verify_api_key = get_verify_api_key_dependency(required_role="user")
 
 
-# ── Routes ─────────────────────────────────────────────────────────────────────
+# ── Structure search helper ────────────────────────────────────────────────────
 
 def _run_structure_searches(
     validated_smiles: str,
@@ -80,60 +80,70 @@ def _run_structure_searches(
     shared_kwargs: dict,
 ) -> pd.DataFrame:
     """
-    Run exact, substructure, and similarity searches for a given SMILES and
-    return a deduplicated, annotated DataFrame.
-
-    Each result row gets a `match_types` column listing which mode(s) matched,
-    and similarity rows include a `similarity_score` column.
+    Run exact, substructure, and similarity searches and return a single
+    deduplicated DataFrame with `match_types` and optional `similarity_score`.
     """
     frames = []
 
-    # ── 1. Exact ─────────────────────────────────────────────────────────────
-    df_exact = search_molecules(smiles=validated_smiles, search_mode="exact", **shared_kwargs)
-    if df_exact is not None and not df_exact.empty:
-        df_exact = df_exact.copy()
-        df_exact["match_types"] = [["exact"]] * len(df_exact)
-        frames.append(df_exact)
+    # 1. Exact
+    try:
+        df_exact = search_molecules(smiles=validated_smiles, search_mode="exact", **shared_kwargs)
+        if df_exact is not None and not df_exact.empty:
+            df_exact = df_exact.copy()
+            df_exact["match_types"] = [["exact"]] * len(df_exact)
+            frames.append(df_exact)
+    except Exception as e:
+        logger.warning("Exact search failed: %s — %s", type(e).__name__, e)
 
-    # ── 2. Substructure ───────────────────────────────────────────────────────
-    df_sub = search_molecules(smiles=validated_smiles, search_mode="substructure", **shared_kwargs)
-    if df_sub is not None and not df_sub.empty:
-        df_sub = df_sub.copy()
-        df_sub["match_types"] = [["substructure"]] * len(df_sub)
-        frames.append(df_sub)
+    # 2. Substructure
+    try:
+        df_sub = search_molecules(smiles=validated_smiles, search_mode="substructure", **shared_kwargs)
+        if df_sub is not None and not df_sub.empty:
+            df_sub = df_sub.copy()
+            df_sub["match_types"] = [["substructure"]] * len(df_sub)
+            frames.append(df_sub)
+    except Exception as e:
+        logger.warning("Substructure search failed: %s — %s", type(e).__name__, e)
 
-    # ── 3. Similarity ─────────────────────────────────────────────────────────
-    df_sim = search_molecules(
-        smiles=validated_smiles,
-        search_mode="similarity",
-        similarity_threshold=threshold,
-        **shared_kwargs,
-    )
-    if df_sim is not None and not df_sim.empty:
-        df_sim = df_sim.copy()
-        df_sim["match_types"] = [["similarity"]] * len(df_sim)
-        frames.append(df_sim)
+    # 3. Similarity
+    try:
+        df_sim = search_molecules(
+            smiles=validated_smiles,
+            search_mode="similarity",
+            similarity_threshold=threshold,
+            **shared_kwargs,
+        )
+        if df_sim is not None and not df_sim.empty:
+            df_sim = df_sim.copy()
+            df_sim["match_types"] = [["similarity"]] * len(df_sim)
+            frames.append(df_sim)
+    except Exception as e:
+        logger.warning("Similarity search failed: %s — %s", type(e).__name__, e)
 
     if not frames:
         return pd.DataFrame()
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Deduplicate on `cid` (or `inchikey` as fallback), merging match_types lists.
-    # Plain dict loop avoids pandas groupby/apply shape inconsistencies.
+    # Deduplicate via plain dict loop — avoids pandas groupby/apply shape bugs
     id_col = "cid" if "cid" in combined.columns else "inchikey"
     has_sim_col = "similarity" in combined.columns
 
-    seen: dict = {}  # id_value -> row dict
+    seen: dict = {}
     for row in combined.to_dict(orient="records"):
-        key = row[id_col]
+        key = row.get(id_col)
+        if key is None:
+            continue
         if key not in seen:
-            seen[key] = row
+            seen[key] = dict(row)
+            seen[key]["match_types"] = list(row["match_types"])
             if has_sim_col:
                 seen[key]["similarity_score"] = float(row.get("similarity") or 0.0)
         else:
             existing = seen[key]
-            existing["match_types"] = sorted(set(existing["match_types"]) | set(row["match_types"]))
+            existing["match_types"] = sorted(
+                set(existing["match_types"]) | set(row["match_types"])
+            )
             if has_sim_col:
                 existing["similarity_score"] = max(
                     existing.get("similarity_score", 0.0),
@@ -145,10 +155,12 @@ def _run_structure_searches(
     for r in merged_rows:
         r.pop("similarity", None)
 
+    if not merged_rows:
+        return pd.DataFrame()
+
     deduped = pd.DataFrame(merged_rows)
 
-    # Sort: exact first, then substructure, then similarity-only; within each
-    # group order by similarity_score descending when available.
+    # Sort: exact first → substructure → similarity-only; highest score wins ties
     priority = {"exact": 0, "substructure": 1, "similarity": 2}
 
     def _sort_key(row):
@@ -163,57 +175,46 @@ def _run_structure_searches(
     return deduped
 
 
+# ── Routes ─────────────────────────────────────────────────────────────────────
+
 @app.get("/compounds/search")
 @limiter.limit("60/minute")
 async def search_compounds(
     request: Request,
-    # ── Text / metadata filters ──────────────────────────────────────────────
+    # Text / metadata
     q: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="Name / CAS / CID"),
     mwMin: Optional[float] = Query(None, ge=0.0, description="Min molecular weight"),
     mwMax: Optional[float] = Query(None, ge=0.0, description="Max molecular weight"),
-    # ── Structure search ─────────────────────────────────────────────────────
+    # Structure
     smiles: Optional[str] = Query(
         None,
         max_length=MAX_QUERY_LEN,
-        description=(
-            "SMILES string — automatically runs exact, substructure, and similarity "
-            "searches and returns deduplicated results ranked by match type"
-        ),
+        description="SMILES — runs exact, substructure, and similarity automatically",
     ),
     threshold: float = Query(
-        0.7,
-        ge=0.0,
-        le=1.0,
-        description="Tanimoto similarity threshold used for the similarity pass (default 0.7)",
+        0.7, ge=0.0, le=1.0,
+        description="Tanimoto similarity threshold (default 0.7)",
     ),
-    # ── Pagination ───────────────────────────────────────────────────────────
-    limit: int = Query(50, ge=1, le=200, description="Max results per search mode"),
-    offset: int = Query(0, ge=0, description="Pagination offset (applied after deduplication)"),
+    # Pagination
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
     _key: str = Depends(verify_api_key),
 ):
     """
-    Unified compound search endpoint.
+    Unified compound search.
 
-    **Text search** (`q`): matches by IUPAC name, alternate names, CAS number, or CID.
-
-    **Structure search** (`smiles`): automatically runs **all three** modes —
-    exact match, substructure, and Tanimoto similarity — in one call.
-    Results are deduplicated and each record includes a `match_types` list
-    (`["exact"]`, `["substructure"]`, `["similarity"]`, or combinations) and,
-    where applicable, a `similarity_score`.  Records are ranked: exact first,
-    then substructure, then similarity-only.
-
-    `q` and `smiles` can be combined with each other and with `mwMin`/`mwMax`.
+    - **`q`** — text search by name, CAS, or CID
+    - **`smiles`** — runs exact + substructure + similarity in one call;
+      each result includes `match_types` and (for similarity) `similarity_score`
+    - Both can be combined with `mwMin` / `mwMax`
     """
     try:
         cid = None
         iupacName = None
         casNumber = None
         altName = None
-
         cas_pattern = r'^\d{2,7}-\d{2}-\d$'
 
-        # ── Parse text query ─────────────────────────────────────────────────
         if q:
             original_q = validate_text_query(q)
             if original_q.isdigit():
@@ -224,13 +225,9 @@ async def search_compounds(
                 iupacName = original_q
                 altName = original_q
 
-        # ── Structure search (all three modes) ───────────────────────────────
         if smiles:
             validated_smiles = validate_smiles(smiles)
 
-            # Shared keyword args forwarded to every search_molecules call.
-            # Pagination is intentionally omitted here — we paginate AFTER
-            # deduplication so the caller always sees a stable page slice.
             shared_kwargs = dict(
                 iupacName=iupacName,
                 altName=altName,
@@ -239,7 +236,7 @@ async def search_compounds(
                 minWeight=mwMin,
                 maxWeight=mwMax,
                 limit=limit,
-                offset=0,
+                offset=0,  # paginate after dedup
             )
 
             df = _run_structure_searches(validated_smiles, threshold, shared_kwargs)
@@ -247,10 +244,8 @@ async def search_compounds(
             if df is None:
                 raise HTTPException(status_code=503, detail="Database unavailable")
 
-            # Apply pagination after merge + dedup
             df = df.iloc[offset: offset + limit]
 
-        # ── Text / metadata only ─────────────────────────────────────────────
         else:
             df = search_molecules(
                 iupacName=iupacName,
@@ -273,8 +268,8 @@ async def search_compounds(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.error("Error in search_compounds: %s", type(e).__name__)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error("Unhandled error in search_compounds: %s — %s", type(e).__name__, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 
 @app.get("/health")
