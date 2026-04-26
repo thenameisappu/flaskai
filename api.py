@@ -302,7 +302,13 @@ async def search_compounds(
             if df is None:
                 raise HTTPException(status_code=503, detail="Database unavailable")
 
-        return df.to_dict(orient="records")
+        records = df.to_dict(orient="records")
+        for r in records:
+            r.pop("match_types", None)
+            # Ensure similarity_score is a proper float (not int 0)
+            if "similarity_score" in r:
+                r["similarity_score"] = round(float(r["similarity_score"]), 4)
+        return records
 
     except HTTPException:
         raise
