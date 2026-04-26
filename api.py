@@ -143,17 +143,21 @@ def _run_structure_searches(
         key = row.get(id_col)
         if key is None:
             continue
+        is_sim_row = "similarity" in row and not (
+            row["similarity"] is None or
+            (isinstance(row["similarity"], float) and math.isnan(row["similarity"]))
+        )
         if key not in seen:
             seen[key] = dict(row)
             seen[key]["match_types"] = list(row["match_types"])
-            if has_sim_col:
+            if is_sim_row:
                 seen[key]["similarity_score"] = _safe_sim(row.get("similarity"))
         else:
             existing = seen[key]
             existing["match_types"] = sorted(
                 set(existing["match_types"]) | set(row["match_types"])
             )
-            if has_sim_col:
+            if is_sim_row:
                 existing["similarity_score"] = max(
                     existing.get("similarity_score", 0.0),
                     _safe_sim(row.get("similarity")),
