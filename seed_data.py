@@ -44,7 +44,6 @@ def insert_samples(json_file="molecules_100.json"):
         cur = conn.cursor()
 
         inserted = 0
-        skipped = 0
         failed = 0
 
         from psycopg2 import sql as psycopg2_sql
@@ -128,8 +127,8 @@ def insert_samples(json_file="molecules_100.json"):
             inserted += cur.rowcount
 
         logger.info(
-            "Insertion complete | Inserted: %d | Skipped: %d | Failed: %d",
-            inserted, skipped, failed
+            "Insertion complete | Inserted: %d | Failed: %d",
+            inserted, failed
         )
 
     finally:

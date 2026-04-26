@@ -50,7 +50,6 @@ def search_molecules(
     cid=None,
     minWeight=None,
     maxWeight=None,
-    exact=False,
     search_mode="",
     similarity_threshold=0.7,
     limit=200,
