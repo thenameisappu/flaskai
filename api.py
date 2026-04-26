@@ -79,6 +79,13 @@ def _run_structure_searches(
     threshold: float,
     shared_kwargs: dict,
 ) -> pd.DataFrame:
+    """
+    Run exact, substructure, and similarity searches for a given SMILES and
+    return a deduplicated, annotated DataFrame.
+
+    Each result row gets a `match_types` column listing which mode(s) matched,
+    and similarity rows include a `similarity_score` column.
+    """
     frames = []
 
     # ── 1. Exact ─────────────────────────────────────────────────────────────
@@ -112,26 +119,36 @@ def _run_structure_searches(
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Deduplicate on `cid` (or `inchikey` as fallback), merging match_types lists
+    # Deduplicate on `cid` (or `inchikey` as fallback), merging match_types lists.
+    # Plain dict loop avoids pandas groupby/apply shape inconsistencies.
     id_col = "cid" if "cid" in combined.columns else "inchikey"
+    has_sim_col = "similarity" in combined.columns
 
-    def _merge_group(group: pd.DataFrame) -> pd.Series:
-        base = group.iloc[0].copy()
-        all_types: list = []
-        for mt in group["match_types"]:
-            all_types.extend(mt)
-        base["match_types"] = sorted(set(all_types))
-        # Keep the best similarity score if present
-        if "similarity" in group.columns:
-            base["similarity_score"] = group["similarity"].max()
-        return base
+    seen: dict = {}  # id_value -> row dict
+    for row in combined.to_dict(orient="records"):
+        key = row[id_col]
+        if key not in seen:
+            seen[key] = row
+            if has_sim_col:
+                seen[key]["similarity_score"] = float(row.get("similarity") or 0.0)
+        else:
+            existing = seen[key]
+            existing["match_types"] = sorted(set(existing["match_types"]) | set(row["match_types"]))
+            if has_sim_col:
+                existing["similarity_score"] = max(
+                    existing.get("similarity_score", 0.0),
+                    float(row.get("similarity") or 0.0),
+                )
 
-    deduped = (
-        combined.groupby(id_col, sort=False)
-        .apply(_merge_group)
-        .reset_index(drop=True)
-    )
+    merged_rows = list(seen.values())
+    # Drop raw similarity column — we expose similarity_score instead
+    for r in merged_rows:
+        r.pop("similarity", None)
 
+    deduped = pd.DataFrame(merged_rows)
+
+    # Sort: exact first, then substructure, then similarity-only; within each
+    # group order by similarity_score descending when available.
     priority = {"exact": 0, "substructure": 1, "similarity": 2}
 
     def _sort_key(row):
@@ -142,10 +159,6 @@ def _run_structure_searches(
     deduped = deduped.iloc[
         sorted(range(len(deduped)), key=lambda i: _sort_key(deduped.iloc[i]))
     ].reset_index(drop=True)
-
-    # Drop the internal similarity column if it came through from db_search
-    if "similarity" in deduped.columns:
-        deduped = deduped.drop(columns=["similarity"])
 
     return deduped
 
@@ -178,7 +191,20 @@ async def search_compounds(
     offset: int = Query(0, ge=0, description="Pagination offset (applied after deduplication)"),
     _key: str = Depends(verify_api_key),
 ):
-    
+    """
+    Unified compound search endpoint.
+
+    **Text search** (`q`): matches by IUPAC name, alternate names, CAS number, or CID.
+
+    **Structure search** (`smiles`): automatically runs **all three** modes —
+    exact match, substructure, and Tanimoto similarity — in one call.
+    Results are deduplicated and each record includes a `match_types` list
+    (`["exact"]`, `["substructure"]`, `["similarity"]`, or combinations) and,
+    where applicable, a `similarity_score`.  Records are ranked: exact first,
+    then substructure, then similarity-only.
+
+    `q` and `smiles` can be combined with each other and with `mwMin`/`mwMax`.
+    """
     try:
         cid = None
         iupacName = None
