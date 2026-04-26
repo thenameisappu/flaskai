@@ -2,6 +2,7 @@ import os
 import re
 import logging
 
+import math
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -129,6 +130,14 @@ def _run_structure_searches(
     id_col = "cid" if "cid" in combined.columns else "inchikey"
     has_sim_col = "similarity" in combined.columns
 
+    def _safe_sim(val) -> float:
+        """Convert a similarity value to float, treating None/NaN as 0.0."""
+        try:
+            f = float(val)
+            return 0.0 if math.isnan(f) else f
+        except (TypeError, ValueError):
+            return 0.0
+
     seen: dict = {}
     for row in combined.to_dict(orient="records"):
         key = row.get(id_col)
@@ -138,7 +147,7 @@ def _run_structure_searches(
             seen[key] = dict(row)
             seen[key]["match_types"] = list(row["match_types"])
             if has_sim_col:
-                seen[key]["similarity_score"] = float(row.get("similarity") or 0.0)
+                seen[key]["similarity_score"] = _safe_sim(row.get("similarity"))
         else:
             existing = seen[key]
             existing["match_types"] = sorted(
@@ -147,7 +156,7 @@ def _run_structure_searches(
             if has_sim_col:
                 existing["similarity_score"] = max(
                     existing.get("similarity_score", 0.0),
-                    float(row.get("similarity") or 0.0),
+                    _safe_sim(row.get("similarity")),
                 )
 
     merged_rows = list(seen.values())
