@@ -198,7 +198,11 @@ async def search_compounds(
     smiles: Optional[str] = Query(
         None,
         max_length=MAX_QUERY_LEN,
-        description="SMILES — runs exact, substructure, and similarity automatically",
+        description="SMILES string for structure search",
+    ),
+    searchMode: Optional[str] = Query(
+        None,
+        description="exact | substructure | similarity — omit to run all three",
     ),
     threshold: float = Query(
         0.7, ge=0.0, le=1.0,
@@ -213,8 +217,8 @@ async def search_compounds(
     Unified compound search.
 
     - **`q`** — text search by name, CAS, or CID
-    - **`smiles`** — runs exact + substructure + similarity in one call;
-      each result includes `match_types` and (for similarity) `similarity_score`
+    - **`smiles`** + **`searchMode`** — run a specific mode (exact/substructure/similarity)
+      or omit `searchMode` to run all three; results include `match_types` and `similarity_score`
     - Both can be combined with `mwMin` / `mwMax`
     """
     try:
@@ -237,6 +241,11 @@ async def search_compounds(
         if smiles:
             validated_smiles = validate_smiles(smiles)
 
+            # Validate searchMode if provided
+            valid_modes = {"exact", "substructure", "similarity"}
+            if searchMode and searchMode not in valid_modes:
+                raise ValueError(f"Invalid searchMode '{searchMode}'. Choose from: exact, substructure, similarity")
+
             shared_kwargs = dict(
                 iupacName=iupacName,
                 altName=altName,
@@ -248,12 +257,31 @@ async def search_compounds(
                 offset=0,  # paginate after dedup
             )
 
-            df = _run_structure_searches(validated_smiles, threshold, shared_kwargs)
-
-            if df is None:
-                raise HTTPException(status_code=503, detail="Database unavailable")
-
-            df = df.iloc[offset: offset + limit]
+            if searchMode:
+                # Run only the requested mode
+                df = search_molecules(
+                    smiles=validated_smiles,
+                    search_mode=searchMode,
+                    similarity_threshold=threshold,
+                    **shared_kwargs,
+                )
+                if df is not None and not df.empty:
+                    df = df.copy()
+                    df["match_types"] = [[searchMode]] * len(df)
+                    if "similarity" in df.columns:
+                        df["similarity_score"] = df["similarity"].apply(
+                            lambda v: 0.0 if (v is None or (isinstance(v, float) and math.isnan(v))) else float(v)
+                        )
+                        df = df.drop(columns=["similarity"])
+                if df is None:
+                    raise HTTPException(status_code=503, detail="Database unavailable")
+                df = df.iloc[offset: offset + limit]
+            else:
+                # Run all three modes and merge
+                df = _run_structure_searches(validated_smiles, threshold, shared_kwargs)
+                if df is None:
+                    raise HTTPException(status_code=503, detail="Database unavailable")
+                df = df.iloc[offset: offset + limit]
 
         else:
             df = search_molecules(
