@@ -9,16 +9,16 @@ services:
     container_name: rdkit-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-postgres}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-postgres}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
       interval: 5s
       timeout: 5s
       start_period: 30s
@@ -33,27 +33,28 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        BUILD_ENV: ${BUILD_ENV:-production}
+        BUILD_ENV: ${BUILD_ENV}
     container_name: molecule-api
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
       API_KEY_HASHES: ${API_KEY_HASHES}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
-      MOLECULES_TABLE: ${MOLECULES_TABLE:-production_molecules}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      MOLECULES_TABLE: ${MOLECULES_TABLE}
+      LOG_LEVEL: ${LOG_LEVEL}
+      UVICORN_WORKERS: ${UVICORN_WORKERS}
+      API_PORT: ${API_PORT}
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT}:${API_PORT}"
     healthcheck:
-      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\"" ]
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:${API_PORT}/health')\"" ]
       interval: 10s
       timeout: 5s
       start_period: 20s
