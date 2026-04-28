@@ -9,17 +9,17 @@ services:
     container_name: rdkit-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 192602@Bb
+      POSTGRES_DB: flaskdb
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
-      - "${DB_PORT:-5433}:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}" ]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d flaskdb" ]
       interval: 5s
       timeout: 5s
       start_period: 30s
@@ -40,9 +40,9 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: flaskdb
+      DB_USER: postgres
+      DB_PASSWORD: 192602@Bb
       API_KEY_HASHES: ${API_KEY_HASHES}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       MOLECULES_TABLE: ${MOLECULES_TABLE}
