@@ -149,6 +149,8 @@ async def search_compounds(
                 df = df.iloc[offset: offset + limit]
             else:
                 df = _run_structure_searches(smiles, threshold, kwargs)
+                if df is None:
+                    raise HTTPException(status_code=503, detail="Database unavailable")
                 df = df.iloc[offset: offset + limit]
         else:
             df = search_molecules(iupacName=iupacName, altName=altName, casNumber=casNumber,
