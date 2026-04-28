@@ -9,9 +9,9 @@ services:
     container_name: rdkit-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 192602@Bb
-      POSTGRES_DB: flaskdb
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-192602@Bb}
+      POSTGRES_DB: ${DB_NAME:-flaskdb}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "5433:5432"
@@ -38,11 +38,11 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: flaskdb
-      DB_USER: postgres
-      DB_PASSWORD: 192602@Bb
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT_INTERNAL:-5432}
+      DB_NAME: ${DB_NAME:-flaskdb}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-192602@Bb}
       API_KEY_HASHES: ${API_KEY_HASHES}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       MOLECULES_TABLE: ${MOLECULES_TABLE}
