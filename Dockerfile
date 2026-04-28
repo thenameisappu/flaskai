@@ -11,12 +11,6 @@ RUN python -m venv /venv \
 
 FROM python:3.11-slim AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxrender1 \
-    libxext6 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 RUN groupadd --gid 1001 appgroup \
     && useradd  --uid 1001 --gid appgroup --no-create-home appuser
 
@@ -34,5 +28,4 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", \
-    "--workers", "4", "--log-level", "info"]
+CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4} --log-level ${LOG_LEVEL:-info}"]
