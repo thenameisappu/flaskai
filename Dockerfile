@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 5 -r requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . .
 
