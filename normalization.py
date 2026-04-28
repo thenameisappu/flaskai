@@ -39,13 +39,16 @@ def normalize_chemical_name(name: str) -> str:
     if not name:
         return ""
 
-    name = str(name).strip().lower()
+    name = str(name).strip()
 
+    # Handle literal \uXXXX escape sequences before lowercasing
     for esc, word in GREEK_ESCAPED.items():
-        name = name.replace(esc.lower(), word)
+        name = name.replace(esc, word)
+
+    name = name.lower()
 
     for symbol, word in GREEK_SYMBOLS.items():
-        name = name.replace(symbol.lower(), word)
+        name = name.replace(symbol, word)
 
     name = name.replace('-', '')
     name = name.replace(' ', '')

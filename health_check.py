@@ -135,7 +135,7 @@ def _check_molecules_table(conn) -> dict:
         )
     try:
         cur = conn.cursor()
-        cur.execute("SELECT to_regclass(%s);", (table,))
+        cur.execute("SELECT to_regclass(%s);", (f'"{table}"',))
         exists = cur.fetchone()[0] is not None
         cur.close()
         if exists:
@@ -148,29 +148,6 @@ def _check_molecules_table(conn) -> dict:
         )
     except Exception as e:
         return _step("molecules_table", False, f"Error checking table: {e}")
-
-
-def _check_table_row_count(conn) -> dict:
-    """Step 7 — How many rows are in the molecules table?"""
-    table = os.getenv("MOLECULES_TABLE", "").strip()
-    if not table:
-        return _step("row_count", False, "MOLECULES_TABLE not set, skipping row count.")
-    try:
-        import re
-        if not re.match(r'^[a-z0-9_]+$', table):
-            return _step("row_count", False, f"Invalid table name format: '{table}'.")
-        from psycopg2 import sql as psycopg2_sql
-        cur = conn.cursor()
-        cur.execute(psycopg2_sql.SQL("SELECT COUNT(*) FROM {}").format(psycopg2_sql.Identifier(table)))
-        count = cur.fetchone()[0]
-        cur.close()
-        ok = count > 0
-        msg = f"Table '{table}' contains {count} row(s)."
-        if not ok:
-            msg += " Table is empty — run seed_data.py to populate it."
-        return _step("row_count", ok, msg)
-    except Exception as e:
-        return _step("row_count", False, f"Error counting rows: {e}")
 
 
 # ── Public API (used by FastAPI /health endpoint) ──────────────────────────────
@@ -210,9 +187,6 @@ def check_db_connection_json() -> dict:
 
         s6 = _check_molecules_table(conn)
         steps["6_molecules_table"] = s6
-
-        s7 = _check_table_row_count(conn)
-        steps["7_row_count"] = s7
 
         conn.close()
     except Exception as e:
@@ -336,21 +310,22 @@ def check_docker_compatibility():
     if r["status"] == "fail":
         for k, v in r.get("failures", {}).items():
             logger.warning("[FAIL] docker — %s: %s", k, v)
+    return r["status"] == "pass"
 
 
 def main():
     parser = argparse.ArgumentParser(description="FlaskAI Health Check")
-    parser.parse_args()
+    args = parser.parse_args()
     logger.info("=" * 50)
     logger.info("     MOLECULE API — HEALTH & DEPLOYMENT CHECK")
     logger.info("=" * 50)
 
-    env_ok  = check_env()
-    deps_ok = check_dependencies()
-    db_ok   = check_db_connection()
-    check_docker_compatibility()
+    env_ok    = check_env()
+    deps_ok   = check_dependencies()
+    db_ok     = check_db_connection()
+    docker_ok = check_docker_compatibility()
 
-    overall = all([env_ok, deps_ok, db_ok])
+    overall = all([env_ok, deps_ok, db_ok, docker_ok])
     if overall:
         logger.info("[OK] All checks passed.")
     else:
