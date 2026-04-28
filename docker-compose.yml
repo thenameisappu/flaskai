@@ -2,7 +2,6 @@ services:
 
   # ── PostgreSQL + RDKit ────────────────────────────────────────────────────
   db:
-    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile.db
@@ -28,7 +27,6 @@ services:
 
   # ── FastAPI application ───────────────────────────────────────────────────
   api:
-    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile
