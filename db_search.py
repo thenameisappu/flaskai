@@ -72,7 +72,7 @@ def search_molecules(
         if not table_name:
             raise ValueError("MOLECULES_TABLE is not set")
 
-        if not re.match(r'^[a-z0-9_]+$', table_name):
+        if not re.match(r'^[A-Za-z0-9_]+$', table_name):
             raise ValueError(f"Invalid table name format in config: {table_name}")
 
         query = psycopg2_sql.SQL("SELECT * FROM {} WHERE 1=1").format(
