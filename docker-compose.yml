@@ -12,12 +12,10 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-192602@Bb}
       POSTGRES_DB: ${DB_NAME:-flaskdb}
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "5433:5432"
     volumes:
       - postgres_data_v2:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
     networks:
       - backend
