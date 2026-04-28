@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.db
+    platform: linux/amd64
     container_name: rdkit-postgres
     restart: unless-stopped
     environment:
