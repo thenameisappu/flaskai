@@ -1,5 +1,12 @@
 version: "3.9"
 
+x-db-env: &db-env
+   DB_HOST: ${DB_HOST}
+  DB_PORT: 5433
+  DB_NAME: ${DB_NAME:-postgres}
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+
 services:
 
   # ── PostgreSQL + RDKit ────────────────────────────────────────────────────
@@ -8,18 +15,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.db
-    restart: unless-stopped
+    image: molecule-db:local # cache-friendly tag for CI
+    container_name: rdkit-postgres
+    restart: unless-stopped # 'always' restarts even after manual stop
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${DB_NAME:-postgres}
+      # Tune shared_buffers / work_mem via PG* env vars supported by the image
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "${DB_PORT:-5433}:5432" # expose 5433 externally → maps to internal postgres port 5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - backend
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-postgres}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-flaskai}" ]
       interval: 10s
       timeout: 5s
       start_period: 30s
@@ -31,35 +43,32 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Pass build-time args if needed (e.g. version label)
       args:
         BUILD_ENV: ${BUILD_ENV:-production}
+    image: molecule-api:local
+    container_name: molecule-api
     restart: unless-stopped
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy # wait for DB healthcheck to pass
     environment:
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD}
+      <<: *db-env # merge shared DB env block
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      MOLECULES_TABLE: ${MOLECULES_TABLE:-molecules}
-      API_KEY_HASHES: ${API_KEY_HASHES}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+      # Never hard-code secrets here; pull from .env or a secrets manager
     ports:
       - "${API_PORT:-8000}:8000"
+    # Exec form avoids a shell wrapper, ensuring signals reach uvicorn
     command: >
-      sh -c "uvicorn api:app
+      uvicorn api:app
         --host 0.0.0.0
         --port 8000
         --workers ${UVICORN_WORKERS:-4}
-        --log-level ${LOG_LEVEL:-info}"
+        --log-level ${LOG_LEVEL:-info}
     networks:
       - backend
     healthcheck:
-      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1" ]
+      test: [ "CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1" ]
       interval: 15s
       timeout: 5s
       start_period: 20s

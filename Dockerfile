@@ -1,35 +1,41 @@
-FROM --platform=linux/amd64 continuumio/miniconda3:latest AS builder
+FROM python:3.11-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
 
-RUN conda install -y -c conda-forge \
-    rdkit \
-    psycopg2 \
-    && conda clean -afy
-
-RUN pip install --no-cache-dir \
-    fastapi \
-    uvicorn \
-    python-dotenv \
-    pydantic \
-    slowapi \
-    limits \
-    pandas
+RUN python -m venv /venv \
+    && /venv/bin/pip install --upgrade pip \
+    && /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 
-FROM --platform=linux/amd64 continuumio/miniconda3:latest AS runtime
+FROM python:3.11-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxrender1 \
+    libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 1001 appgroup \
+    && useradd  --uid 1001 --gid appgroup --no-create-home appuser
 
 WORKDIR /app
 
-COPY --from=builder /opt/conda /opt/conda
-COPY . .
+COPY --from=builder /venv /venv
 
-ENV PATH="/opt/conda/bin:$PATH" \
+COPY --chown=appuser:appgroup . .
+
+ENV PATH="/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+USER appuser
+
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-4} --log-level ${LOG_LEVEL:-info}"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", \
+    "--workers", "4", "--log-level", "info"]
