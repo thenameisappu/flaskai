@@ -2,15 +2,9 @@ FROM --platform=linux/amd64 python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 5 \
-    rdkit \
-    psycopg2-binary \
-    pandas \
-    fastapi \
-    uvicorn \
-    python-dotenv \
-    slowapi \
-    limits
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir --prefer-binary --timeout 300 --retries 5 -r requirements.txt
 
 COPY . .
 
