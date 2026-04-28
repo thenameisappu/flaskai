@@ -3,9 +3,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY requirements.txt .
-COPY wheels/ ./wheels/
 
-RUN pip install --no-index --find-links=./wheels -r requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . .
 
