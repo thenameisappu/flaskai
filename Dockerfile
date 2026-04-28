@@ -1,28 +1,32 @@
-FROM --platform=linux/amd64 python:3.11-slim AS builder
+FROM --platform=linux/amd64 continuumio/miniconda3:latest AS builder
 
 WORKDIR /app
 
 COPY requirements.txt .
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libboost-all-dev \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN conda install -y -c conda-forge \
+    rdkit \
+    psycopg2 \
+    && conda clean -afy
 
-RUN python -m venv /venv \
-    && /venv/bin/pip install --upgrade pip \
-    && /venv/bin/pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    python-dotenv \
+    pydantic \
+    slowapi \
+    limits \
+    pandas
 
 
-FROM --platform=linux/amd64 python:3.11-slim AS runtime
+FROM --platform=linux/amd64 continuumio/miniconda3:latest AS runtime
 
 WORKDIR /app
 
-COPY --from=builder /venv /venv
+COPY --from=builder /opt/conda /opt/conda
 COPY . .
 
-ENV PATH="/venv/bin:$PATH" \
+ENV PATH="/opt/conda/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
