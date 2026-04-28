@@ -19,10 +19,6 @@ FROM --platform=linux/amd64 python:3.11-slim AS runtime
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY --from=builder /venv /venv
 COPY . .
 
