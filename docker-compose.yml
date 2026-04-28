@@ -6,6 +6,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.db
+      network: host
     container_name: rdkit-postgres
     restart: unless-stopped
     environment:
@@ -32,6 +33,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      network: host
       args:
         BUILD_ENV: ${BUILD_ENV}
     container_name: molecule-api
