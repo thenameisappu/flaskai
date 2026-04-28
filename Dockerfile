@@ -11,20 +11,15 @@ RUN python -m venv /venv \
 
 FROM python:3.11-slim AS runtime
 
-RUN groupadd --gid 1001 appgroup \
-    && useradd  --uid 1001 --gid appgroup --no-create-home appuser
-
 WORKDIR /app
 
 COPY --from=builder /venv /venv
 
-COPY --chown=appuser:appgroup . .
+COPY . .
 
 ENV PATH="/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
-
-USER appuser
 
 EXPOSE 8000
 
