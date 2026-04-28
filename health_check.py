@@ -126,7 +126,7 @@ def _check_pg_version(conn) -> dict:
 
 def _check_molecules_table(conn) -> dict:
     """Step 6 — Does the configured MOLECULES_TABLE exist?"""
-    table = os.getenv("MOLECULES_TABLE", "").strip().lower()
+    table = os.getenv("MOLECULES_TABLE", "").strip()
     if not table:
         return _step(
             "molecules_table",
@@ -152,7 +152,7 @@ def _check_molecules_table(conn) -> dict:
 
 def _check_table_row_count(conn) -> dict:
     """Step 7 — How many rows are in the molecules table?"""
-    table = os.getenv("MOLECULES_TABLE", "").strip().lower()
+    table = os.getenv("MOLECULES_TABLE", "").strip()
     if not table:
         return _step("row_count", False, "MOLECULES_TABLE not set, skipping row count.")
     try:
