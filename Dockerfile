@@ -15,9 +15,11 @@ RUN python -m venv /venv \
 
 FROM python:3.11-slim AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80retries && \
+    apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxext6 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1001 appgroup \
