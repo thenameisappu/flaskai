@@ -1,7 +1,7 @@
 version: "3.9"
 
 x-db-env: &db-env
-   DB_HOST: ${DB_HOST}
+  DB_HOST: ${DB_HOST}
   DB_PORT: 5433
   DB_NAME: ${DB_NAME:-postgres}
   DB_USER: ${DB_USER:-postgres}
@@ -60,11 +60,11 @@ services:
       - "${API_PORT:-8000}:8000"
     # Exec form avoids a shell wrapper, ensuring signals reach uvicorn
     command: >
-      uvicorn api:app
+      sh -c "uvicorn api:app
         --host 0.0.0.0
         --port 8000
         --workers ${UVICORN_WORKERS:-4}
-        --log-level ${LOG_LEVEL:-info}
+        --log-level ${LOG_LEVEL:-info}"
     networks:
       - backend
     healthcheck:
