@@ -1,5 +1,7 @@
-FROM mcs07/postgres-rdkit:latest
+FROM --platform=linux/amd64 mcs07/postgres-rdkit:latest
+
+COPY init.sql /docker-entrypoint-initdb.d/10_init.sql
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=5 \
-    CMD pg_isready -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" \
+    CMD pg_isready -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-flaskai}" \
     || exit 1
