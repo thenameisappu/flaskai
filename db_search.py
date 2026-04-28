@@ -9,7 +9,6 @@ from rdkit.Chem import AllChem, DataStructs
 import warnings
 
 from normalization import GREEK_SYMBOLS
-from security.query import escape_like
 
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
@@ -17,6 +16,15 @@ logger = logging.getLogger(__name__)
 
 _DB_ROW_HARD_LIMIT = 1000
 
+_LIKE_ESCAPE_CHAR = "!"
+
+def escape_like(value: str) -> str:
+    return (
+        value
+        .replace(_LIKE_ESCAPE_CHAR, _LIKE_ESCAPE_CHAR * 2)
+        .replace("%",               _LIKE_ESCAPE_CHAR + "%")
+        .replace("_",               _LIKE_ESCAPE_CHAR + "_")
+    )
 
 def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
     if not text:
@@ -61,23 +69,11 @@ def search_molecules(
 
         table_name = os.getenv("MOLECULES_TABLE", "").strip().lower()
 
-        allowed_tables = {
-            t.strip().lower()
-            for t in os.getenv("ALLOWED_TABLES", "").split(",")
-            if t.strip()
-        }
-
         if not table_name:
             raise ValueError("MOLECULES_TABLE is not set")
 
-        if not allowed_tables:
-            raise ValueError("ALLOWED_TABLES is not set")
-
         if not re.match(r'^[a-z0-9_]+$', table_name):
             raise ValueError(f"Invalid table name format in config: {table_name}")
-
-        if table_name not in allowed_tables:
-            raise ValueError(f"Unauthorized table name: {table_name}")
 
         query = psycopg2_sql.SQL("SELECT * FROM {} WHERE 1=1").format(
             psycopg2_sql.Identifier(table_name)
