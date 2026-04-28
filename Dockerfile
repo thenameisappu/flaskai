@@ -1,26 +1,23 @@
-FROM python:3.11-slim AS builder
+FROM --platform=linux/amd64 python:3.11
 
 WORKDIR /app
 
-COPY requirements.txt .
-
-RUN python -m venv /venv \
-    && /venv/bin/pip install --upgrade pip \
-    && /venv/bin/pip install --no-cache-dir -r requirements.txt
-
-
-FROM python:3.11-slim AS runtime
-
-WORKDIR /app
-
-COPY --from=builder /venv /venv
+RUN pip install --no-cache-dir --prefer-binary \
+    rdkit \
+    psycopg2-binary \
+    pandas \
+    fastapi \
+    uvicorn \
+    python-dotenv \
+    pydantic \
+    slowapi \
+    limits
 
 COPY . .
 
-ENV PATH="/venv/bin:$PATH" \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-EXPOSE ${API_PORT:-8000}
+EXPOSE 8000
 
 CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port ${API_PORT:-8000} --workers ${UVICORN_WORKERS:-4} --log-level ${LOG_LEVEL:-info}"]
