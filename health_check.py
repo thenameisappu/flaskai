@@ -126,7 +126,7 @@ def _check_pg_version(conn) -> dict:
 
 def _check_molecules_table(conn) -> dict:
     """Step 6 — Does the configured MOLECULES_TABLE exist?"""
-    table = os.getenv("MOLECULES_TABLE", "").strip()
+    table = os.getenv("MOLECULES_TABLE", "")
     if not table:
         return _step(
             "molecules_table",

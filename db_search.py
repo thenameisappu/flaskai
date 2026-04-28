@@ -67,7 +67,7 @@ def search_molecules(
         conn = get_connection()
         has_extension = check_rdkit_extension(conn)
 
-        table_name = os.getenv("MOLECULES_TABLE", "").strip()
+        table_name = os.getenv("MOLECULES_TABLE", "")
 
         if not table_name:
             raise ValueError("MOLECULES_TABLE is not set")
