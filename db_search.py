@@ -31,7 +31,7 @@ def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
         return ""
     result = text.lower()
     for symbol, word in GREEK_SYMBOLS.items():
-        result = result.replace(symbol.lower(), word)
+        result = result.replace(symbol, word)
     if not preserve_hyphens:
         result = result.replace('-', ' ').replace('_', ' ')
     return result

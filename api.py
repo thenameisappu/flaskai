@@ -120,7 +120,7 @@ async def search_compounds(
         if q:
             q = validate_text_query(q)
             if q.isdigit():
-                cid = int(q)
+                cid = q
             elif re.match(cas_pattern, q):
                 casNumber = q
             else:
@@ -149,8 +149,6 @@ async def search_compounds(
                 df = df.iloc[offset: offset + limit]
             else:
                 df = _run_structure_searches(smiles, threshold, kwargs)
-                if df is None:
-                    raise HTTPException(status_code=503, detail="Database unavailable")
                 df = df.iloc[offset: offset + limit]
         else:
             df = search_molecules(iupacName=iupacName, altName=altName, casNumber=casNumber,
