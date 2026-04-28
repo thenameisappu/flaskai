@@ -28,8 +28,7 @@ services:
     container_name: molecule-api
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     environment:
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT_INTERNAL:-5432}
