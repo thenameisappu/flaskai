@@ -185,8 +185,8 @@ def search_molecules(
             if not query_mol:
                 return df.iloc[offset: offset + limit]
 
-            smiles_col   = 'smiles'
-            inchikey_col = 'inchikey'
+            smiles_col   = 'structureMol'
+            inchikey_col = 'inchiKey'
 
             if search_mode == "exact":
                 try:

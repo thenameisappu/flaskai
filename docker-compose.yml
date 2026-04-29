@@ -1,7 +1,7 @@
 version: "3.9"
 
 x-db-env: &db-env
-   DB_HOST: ${DB_HOST}
+  DB_HOST: ${DB_HOST}
   DB_PORT: 5433
   DB_NAME: ${DB_NAME:-postgres}
   DB_USER: ${DB_USER:-postgres}
@@ -15,17 +15,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.db
-    image: molecule-db:local # cache-friendly tag for CI
+    image: molecule-db:local
     container_name: rdkit-postgres
-    restart: unless-stopped # 'always' restarts even after manual stop
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${DB_NAME:-postgres}
-      # Tune shared_buffers / work_mem via PG* env vars supported by the image
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
-      - "${DB_PORT:-5433}:5432" # expose 5433 externally → maps to internal postgres port 5432
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -43,7 +42,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      # Pass build-time args if needed (e.g. version label)
       args:
         BUILD_ENV: ${BUILD_ENV:-production}
     image: molecule-api:local
@@ -51,14 +49,12 @@ services:
     restart: unless-stopped
     depends_on:
       db:
-        condition: service_healthy # wait for DB healthcheck to pass
+        condition: service_healthy
     environment:
-      <<: *db-env # merge shared DB env block
+      <<: *db-env
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # Never hard-code secrets here; pull from .env or a secrets manager
     ports:
       - "${API_PORT:-8000}:8000"
-    # Exec form avoids a shell wrapper, ensuring signals reach uvicorn
     command: >
       uvicorn api:app
         --host 0.0.0.0
@@ -73,7 +69,6 @@ services:
       timeout: 5s
       start_period: 20s
       retries: 3
-
 
 volumes:
   postgres_data:
