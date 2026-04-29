@@ -99,8 +99,8 @@ def search_molecules(
             iupac_norm = normalize_for_search(iupacName)
             iupac_escaped = escape_like(iupac_norm)
             name_filters.append(psycopg2_sql.SQL(
-                "(lower(replace(replace(iupacname, '-', ' '), '_', ' ')) = %s "
-                "OR lower(replace(replace(iupacname, '-', ' '), '_', ' ')) LIKE %s ESCAPE '!')"
+                "(lower(replace(replace(\"iupacName\", '-', ' '), '_', ' ')) = %s "
+                "OR lower(replace(replace(\"iupacName\", '-', ' '), '_', ' ')) LIKE %s ESCAPE '!')"
             ))
             params.extend([iupac_norm, f"%{iupac_escaped}%"])
 
@@ -113,9 +113,9 @@ def search_molecules(
                 "x, 'α','alpha'),'Α','alpha'),'β','beta'),'Β','beta'),'γ','gamma'),'Γ','gamma')"
                 ",'δ','delta'),'Δ','delta'),'ε','epsilon'),'Ε','epsilon'))"
             )
-            exact_match  = psycopg2_sql.SQL("%s IN (SELECT {} FROM unnest(alternativenames) x)").format(_db_greek_norm)
+            exact_match  = psycopg2_sql.SQL("%s IN (SELECT {} FROM unnest(\"alternativeNames\") x)").format(_db_greek_norm)
             partial_match = psycopg2_sql.SQL(
-                "EXISTS (SELECT 1 FROM unnest(alternativenames) x WHERE {} LIKE %s ESCAPE '!')"
+                "EXISTS (SELECT 1 FROM unnest(\"alternativeNames\") x WHERE {} LIKE %s ESCAPE '!')"
             ).format(_db_greek_norm)
             
             name_filters.append(psycopg2_sql.SQL("({} OR {})").format(exact_match, partial_match))
@@ -123,7 +123,7 @@ def search_molecules(
 
         # ── CAS Number — exact match ───────────────────────────────────────────
         if casNumber:
-            name_filters.append(psycopg2_sql.SQL("casnumber ILIKE %s"))
+            name_filters.append(psycopg2_sql.SQL("\"casNumber\" ILIKE %s"))
             params.append(f"%{casNumber}%")
 
         if name_filters:
@@ -131,16 +131,16 @@ def search_molecules(
 
         # ── CID — cast to TEXT for partial numeric search ───────────────────────
         if cid is not None:
-            query += psycopg2_sql.SQL(" AND CAST(cid AS TEXT) LIKE %s ESCAPE '!'")
+            query += psycopg2_sql.SQL(" AND CAST(\"cid\" AS TEXT) LIKE %s ESCAPE '!'")
             params.append(f"%{cid}%")
 
         # ── Molecular weight range ─────────────────────────────────────────────
         if minWeight and float(minWeight) > 0:
-            query += psycopg2_sql.SQL(" AND molweight >= %s")
+            query += psycopg2_sql.SQL(" AND \"molWeight\" >= %s")
             params.append(minWeight)
 
         if maxWeight and float(maxWeight) > 0:
-            query += psycopg2_sql.SQL(" AND molweight <= %s")
+            query += psycopg2_sql.SQL(" AND \"molWeight\" <= %s")
             params.append(maxWeight)
 
         # ── RDKit structural filters (extension path) ──────────────────────────
@@ -153,16 +153,16 @@ def search_molecules(
                         inchi_key = Chem.InchiToInchiKey(inchi_str)
                     except Exception:
                         inchi_key = MolToInchiKey(mol)
-                    query += psycopg2_sql.SQL(" AND (smiles = %s OR inchikey = %s)")
+                    query += psycopg2_sql.SQL(" AND (\"structureMol\" = %s OR \"inchiKey\" = %s)")
                     params.extend([smiles, inchi_key])
 
                 elif search_mode == "substructure":
-                    query += psycopg2_sql.SQL(" AND structuremol @> mol_from_smiles(%s)")
+                    query += psycopg2_sql.SQL(" AND \"structureMol\"::mol @> mol_from_smiles(%s)")
                     params.append(smiles)
 
                 elif search_mode == "similarity":
                     query += psycopg2_sql.SQL(
-                        " AND tanimoto_sml(morgan_fp(structuremol), morgan_fp(mol_from_smiles(%s))) >= %s"
+                        " AND tanimoto_sml(morgan_fp(\"structureMol\"::mol), morgan_fp(mol_from_smiles(%s))) >= %s"
                     )
                     params.extend([smiles, similarity_threshold])
 
@@ -185,12 +185,13 @@ def search_molecules(
             if not query_mol:
                 return df.iloc[offset: offset + limit]
 
+            # DB column is "structureMol" (mol type); "inchiKey" is the text identifier
             smiles_col   = 'structureMol'
             inchikey_col = 'inchiKey'
 
             if search_mode == "exact":
                 try:
-                    inchi_str  = Chem.MolToInchi(query_mol)
+                    inchi_str   = Chem.MolToInchi(query_mol)
                     query_inchi = Chem.InchiToInchiKey(inchi_str)
                 except Exception:
                     query_inchi = MolToInchiKey(query_mol)
@@ -224,5 +225,11 @@ def search_molecules(
         return df
 
     except Exception as e:
-        logger.error("Error during molecule search: %s", type(e).__name__)
+        logger.error(
+            "Error during molecule search: %s — %s",
+            type(e).__name__,
+            e,
+            exc_info=True,
+        )
         return None
+        
