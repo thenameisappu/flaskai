@@ -106,7 +106,7 @@ async def search_compounds(
     q: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="Name / CAS / CID"),
     mwMin: Optional[float] = Query(None, ge=0.0),
     mwMax: Optional[float] = Query(None, ge=0.0),
-    smiles: Optional[str] = Query(None, max_length=MAX_QUERY_LEN),
+    smiles: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="SMILES string for structural search"),
     searchMode: Optional[str] = Query(None, description="exact | substructure | similarity — omit for all three"),
     threshold: float = Query(0.7, ge=0.0, le=1.0),
     limit: int = Query(50, ge=1, le=200),

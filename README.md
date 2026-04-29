@@ -4,12 +4,12 @@
 
 The Molecule Search API is a state-of-the-art chemical informatics API platform designed to power advanced molecular searches. Powered by a high-performance FastAPI back-end, it empowers researchers and developers to search and analyze molecular compounds effortlessly.
 
-At its core, the project solves the complex challenge of chemical identification and structural matching by leveraging RDKit and a customized PostgreSQL database. It supports advanced structure-based queries—like exact match, substructure matching, and Tanimoto similarity—while also offering comprehensive text-based search (SMILES, IUPAC, CAS, and common names) paired with robust chemical name normalization.
+At its core, the project solves the complex challenge of chemical identification and structural matching by leveraging RDKit and a customized PostgreSQL database. It supports advanced structure-based queries—like exact match, substructure matching, and Tanimoto similarity—while also offering comprehensive text-based search (structureMol, IUPAC, CAS, and common names) paired with robust chemical name normalization.
 
 ## 🧠 Features
 
 * **Advanced Structural Search**: Perform Exact, Substructure, and Similarity (Tanimoto) searches.
-* **Flexible Text Search**: Query by CAS Number, IUPAC Name, alternate names, CID, or SMILES.
+* **Flexible Text Search**: Query by CAS Number, IUPAC Name, alternate names, CID, or structureMol.
 * **Smart Chemical Normalization**: Automatically normalizes Greek letters (e.g., α to alpha) and generates deterministic, canonical SHA-256 chemical hashes to identify compounds seamlessly.
 * **Property Calculation on the Fly**: Computes Molecular Weight, LogP, and Atom Counts natively using RDKit.
 * **High-Performance Database Layer**: Utilizes PostgreSQL with native RDKit extensions for lightning-fast, DB-level chemical filtering, with an automated fallback to Python-level processing.
@@ -24,7 +24,7 @@ The system is built on a service-oriented architecture ensuring high scalability
 * **Normalization & Security (`normalization.py`, `security/`)**: Normalizes complex chemical inputs and enforces strict authentication, query escaping, and input validation bounds.
 
 **Execution Flow:**
-Input (Text string / SMILES) → API Request → Input Validation & Normalization → Parameterized SQL Query Generation → PostgreSQL Execution (RDKit Ext.) → Python-level filtering (Fallback) → Data Structuring → JSON Output
+Input (Text string / structureMol) → API Request → Input Validation & Normalization → Parameterized SQL Query Generation → PostgreSQL Execution (RDKit Ext.) → Python-level filtering (Fallback) → Data Structuring → JSON Output
 
 ## 📂 Project Structure
 

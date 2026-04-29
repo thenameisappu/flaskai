@@ -15,8 +15,39 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 logger = logging.getLogger(__name__)
 
 _DB_ROW_HARD_LIMIT = 1000
+_LIKE_ESCAPE_CHAR  = "!"
 
-_LIKE_ESCAPE_CHAR = "!"
+# ── DB→API field mapping (all aliasing happens in SQL, not application code) ──
+# DB column        SQL alias
+# id            →  id
+# structureMol  →  smiles        via mol_to_smiles()   [mol → str]
+# casNumber     →  casnumber
+# alternativeNames→ alternativenames  via array_to_string()
+# cid           →  cid
+# iupacName     →  iupacname
+# molWeight     →  molweight
+# inchiKey      →  inchikey
+#
+# Excluded from SELECT: fp_0–fp_31, popcnt, mol_id
+# ─────────────────────────────────────────────────────────────────────────────
+
+# The API parameter accepted from callers is always a SMILES string.
+# It is passed to SQL functions (mol_from_smiles, morgan_fp, …) inside the
+# WHERE clause.  The structureMol DB column is never touched directly in Python.
+
+_SELECT_TEMPLATE = (
+    "SELECT "
+    "id, "
+    "mol_to_smiles({smol}) AS smiles, "
+    "{cas} AS casnumber, "
+    "array_to_string({alt}, ', ') AS alternativenames, "
+    "cid, "
+    "{iupac} AS iupacname, "
+    "{mw} AS molweight, "
+    "{ik} AS inchikey "
+    "FROM {tbl} WHERE 1=1"
+)
+
 
 def escape_like(value: str) -> str:
     return (
@@ -25,6 +56,7 @@ def escape_like(value: str) -> str:
         .replace("%",               _LIKE_ESCAPE_CHAR + "%")
         .replace("_",               _LIKE_ESCAPE_CHAR + "_")
     )
+
 
 def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
     if not text:
@@ -37,7 +69,7 @@ def normalize_for_search(text: str, preserve_hyphens: bool = False) -> str:
     return result
 
 
-def check_rdkit_extension(conn):
+def check_rdkit_extension(conn) -> bool:
     try:
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM pg_extension WHERE extname='rdkit';")
@@ -48,10 +80,11 @@ def check_rdkit_extension(conn):
         return False
 
 
-from psycopg2 import sql as psycopg2_sql
+from psycopg2 import sql as S
+
 
 def search_molecules(
-    smiles=None,
+    smiles: str = None,       # SMILES string submitted by the caller
     iupacName=None,
     casNumber=None,
     altName=None,
@@ -63,163 +96,164 @@ def search_molecules(
     limit=200,
     offset=0,
 ):
+    """Query the molecule table.
+
+    ``smiles`` is always a SMILES string (the API-facing concept).
+    It is passed to RDKit SQL functions (mol_from_smiles, morgan_fp, …) inside
+    the WHERE clause.  The DB column ``structureMol`` (mol type) is only
+    referenced via SQL identifiers — never touched directly in Python.
+    """
     try:
         conn = get_connection()
-        has_extension = check_rdkit_extension(conn)
+        has_rdkit = check_rdkit_extension(conn)
 
         table_name = os.getenv("MOLECULES_TABLE", "")
-
         if not table_name:
             raise ValueError("MOLECULES_TABLE is not set")
-
         if not re.match(r'^[A-Za-z0-9_]+$', table_name):
-            raise ValueError(f"Invalid table name format in config: {table_name}")
+            raise ValueError(f"Invalid table name: {table_name}")
 
-        query = psycopg2_sql.SQL("SELECT * FROM {} WHERE 1=1").format(
-            psycopg2_sql.Identifier(table_name)
+        # ── Canonical SELECT: every DB→API alias is defined here ───────────────
+        query = S.SQL(_SELECT_TEMPLATE).format(
+            smol=S.Identifier("structureMol"),
+            cas=S.Identifier("casNumber"),
+            alt=S.Identifier("alternativeNames"),
+            iupac=S.Identifier("iupacName"),
+            mw=S.Identifier("molWeight"),
+            ik=S.Identifier("inchiKey"),
+            tbl=S.Identifier(table_name),
         )
         params = []
         name_filters = []
 
-        ALLOWED_COLUMNS = {"cid", "casnumber", "molweight", "smiles", "inchikey", "iupacname", "alternativenames"}
-        search_cols = []
-        if iupacName: search_cols.append("iupacname")
-        if altName: search_cols.append("alternativenames")
-        if casNumber: search_cols.append("casnumber")
-        if cid is not None: search_cols.append("cid")
-        if minWeight or maxWeight: search_cols.append("molweight")
-        if smiles and has_extension: search_cols.extend(["smiles", "inchikey"])
-
-        for col in search_cols:
-            if col not in ALLOWED_COLUMNS:
-                raise ValueError("Invalid column name")
-
-        # ── IUPAC Name ─────────────────────────────────────────────────────────
+        # ── iupacName ──────────────────────────────────────────────────────────
         if iupacName:
-            iupac_norm = normalize_for_search(iupacName)
-            iupac_escaped = escape_like(iupac_norm)
-            name_filters.append(psycopg2_sql.SQL(
-                "(lower(replace(replace(\"iupacName\", '-', ' '), '_', ' ')) = %s "
-                "OR lower(replace(replace(\"iupacName\", '-', ' '), '_', ' ')) LIKE %s ESCAPE '!')"
-            ))
-            params.extend([iupac_norm, f"%{iupac_escaped}%"])
+            norm    = normalize_for_search(iupacName)
+            escaped = escape_like(norm)
+            name_filters.append(S.SQL(
+                "(lower(replace(replace({col}, '-', ' '), '_', ' ')) = %s "
+                "OR lower(replace(replace({col}, '-', ' '), '_', ' ')) LIKE %s ESCAPE '!')"
+            ).format(col=S.Identifier("iupacName")))
+            params.extend([norm, f"%{escaped}%"])
 
-        # ── Alternative Names ──────────────────────────────────────────────────
+        # ── alternativeNames ───────────────────────────────────────────────────
         if altName:
-            alt_norm = normalize_for_search(altName, preserve_hyphens=True)
-            alt_escaped = escape_like(alt_norm)
-            _db_greek_norm = psycopg2_sql.SQL(
+            norm    = normalize_for_search(altName, preserve_hyphens=True)
+            escaped = escape_like(norm)
+            greek_norm = S.SQL(
                 "lower(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace("
                 "x, 'α','alpha'),'Α','alpha'),'β','beta'),'Β','beta'),'γ','gamma'),'Γ','gamma')"
                 ",'δ','delta'),'Δ','delta'),'ε','epsilon'),'Ε','epsilon'))"
             )
-            exact_match  = psycopg2_sql.SQL("%s IN (SELECT {} FROM unnest(\"alternativeNames\") x)").format(_db_greek_norm)
-            partial_match = psycopg2_sql.SQL(
-                "EXISTS (SELECT 1 FROM unnest(\"alternativeNames\") x WHERE {} LIKE %s ESCAPE '!')"
-            ).format(_db_greek_norm)
-            
-            name_filters.append(psycopg2_sql.SQL("({} OR {})").format(exact_match, partial_match))
-            params.extend([alt_norm, f"%{alt_escaped}%"])
+            exact_match   = S.SQL("%s IN (SELECT {} FROM unnest({}) x)").format(
+                greek_norm, S.Identifier("alternativeNames"))
+            partial_match = S.SQL(
+                "EXISTS (SELECT 1 FROM unnest({}) x WHERE {} LIKE %s ESCAPE '!')"
+            ).format(S.Identifier("alternativeNames"), greek_norm)
+            name_filters.append(S.SQL("({} OR {})").format(exact_match, partial_match))
+            params.extend([norm, f"%{escaped}%"])
 
-        # ── CAS Number — exact match ───────────────────────────────────────────
+        # ── casNumber ──────────────────────────────────────────────────────────
         if casNumber:
-            name_filters.append(psycopg2_sql.SQL("\"casNumber\" ILIKE %s"))
+            name_filters.append(S.SQL("{} ILIKE %s").format(S.Identifier("casNumber")))
             params.append(f"%{casNumber}%")
 
         if name_filters:
-            query += psycopg2_sql.SQL(" AND ({})").format(psycopg2_sql.SQL(" OR ").join(name_filters))
+            query += S.SQL(" AND ({})").format(S.SQL(" OR ").join(name_filters))
 
-        # ── CID — cast to TEXT for partial numeric search ───────────────────────
+        # ── cid ────────────────────────────────────────────────────────────────
         if cid is not None:
-            query += psycopg2_sql.SQL(" AND CAST(\"cid\" AS TEXT) LIKE %s ESCAPE '!'")
+            query += S.SQL(" AND CAST({} AS TEXT) LIKE %s ESCAPE '!'").format(
+                S.Identifier("cid"))
             params.append(f"%{cid}%")
 
-        # ── Molecular weight range ─────────────────────────────────────────────
+        # ── molWeight ──────────────────────────────────────────────────────────
         if minWeight and float(minWeight) > 0:
-            query += psycopg2_sql.SQL(" AND \"molWeight\" >= %s")
+            query += S.SQL(" AND {} >= %s").format(S.Identifier("molWeight"))
             params.append(minWeight)
-
         if maxWeight and float(maxWeight) > 0:
-            query += psycopg2_sql.SQL(" AND \"molWeight\" <= %s")
+            query += S.SQL(" AND {} <= %s").format(S.Identifier("molWeight"))
             params.append(maxWeight)
 
-        # ── RDKit structural filters (extension path) ──────────────────────────
-        if smiles and has_extension:
-            mol = Chem.MolFromSmiles(smiles)
+        # ── structural search (RDKit extension path) ───────────────────────────
+        # smiles is the caller-supplied SMILES string.
+        # mol_from_smiles() / morgan_fp() are RDKit SQL functions that operate
+        # on the "structureMol" DB column (mol type).
+        if smiles and has_rdkit:
+            mol = Chem.MolFromSmiles(smiles)          # Python-side validation only
             if mol:
                 if search_mode == "exact":
                     try:
-                        inchi_str = Chem.MolToInchi(mol)
-                        inchi_key = Chem.InchiToInchiKey(inchi_str)
+                        inchi_key = Chem.InchiToInchiKey(Chem.MolToInchi(mol))
                     except Exception:
                         inchi_key = MolToInchiKey(mol)
-                    query += psycopg2_sql.SQL(" AND (\"structureMol\" = %s OR \"inchiKey\" = %s)")
-                    params.extend([smiles, inchi_key])
+                    # Match via inchikey (text alias, available in WHERE subquery)
+                    query += S.SQL(" AND {} = %s").format(S.Identifier("inchiKey"))
+                    params.append(inchi_key)
 
                 elif search_mode == "substructure":
-                    query += psycopg2_sql.SQL(" AND \"structureMol\"::mol @> mol_from_smiles(%s)")
+                    query += S.SQL(
+                        " AND {} @> mol_from_smiles(%s)"
+                    ).format(S.Identifier("structureMol"))
                     params.append(smiles)
 
                 elif search_mode == "similarity":
-                    query += psycopg2_sql.SQL(
-                        " AND tanimoto_sml(morgan_fp(\"structureMol\"::mol), morgan_fp(mol_from_smiles(%s))) >= %s"
-                    )
+                    query += S.SQL(
+                        " AND tanimoto_sml(morgan_fp({}), morgan_fp(mol_from_smiles(%s))) >= %s"
+                    ).format(S.Identifier("structureMol"))
                     params.extend([smiles, similarity_threshold])
 
         # ── LIMIT / OFFSET ─────────────────────────────────────────────────────
-        needs_python_filter = bool(smiles and not has_extension)
+        needs_python_filter = bool(smiles and not has_rdkit)
 
         if needs_python_filter:
-            query += psycopg2_sql.SQL(" LIMIT %s")
+            query += S.SQL(" LIMIT %s")
             params.append(_DB_ROW_HARD_LIMIT)
         else:
-            query += psycopg2_sql.SQL(" LIMIT %s OFFSET %s")
+            query += S.SQL(" LIMIT %s OFFSET %s")
             params.extend([limit, offset])
 
         df = pd.read_sql(query.as_string(conn), conn, params=params)
         conn.close()
 
-        # ── Python-fallback structural filtering ───────────────────────────────
+        # ── Python-fallback structural filtering (no RDKit extension) ──────────
+        # DataFrame columns use the SQL aliases: "smiles", "inchikey", etc.
         if needs_python_filter and not df.empty:
             query_mol = Chem.MolFromSmiles(smiles)
             if not query_mol:
                 return df.iloc[offset: offset + limit]
 
-            # DB column is "structureMol" (mol type); "inchiKey" is the text identifier
-            smiles_col   = 'structureMol'
-            inchikey_col = 'inchiKey'
+            smiles_col   = "smiles"    # SQL alias for mol_to_smiles(structureMol)
+            inchikey_col = "inchikey"  # SQL alias for inchiKey
 
             if search_mode == "exact":
                 try:
-                    inchi_str   = Chem.MolToInchi(query_mol)
-                    query_inchi = Chem.InchiToInchiKey(inchi_str)
+                    query_inchi = Chem.InchiToInchiKey(Chem.MolToInchi(query_mol))
                 except Exception:
                     query_inchi = MolToInchiKey(query_mol)
                 df = df[
-                    (df[inchikey_col] == query_inchi) | (df[smiles_col] == smiles)
+                    (df[inchikey_col] == query_inchi) |
+                    (df[smiles_col] == smiles)
                 ]
 
             elif search_mode == "substructure":
-                def is_substructure(target_smiles):
-                    mol = Chem.MolFromSmiles(target_smiles) if target_smiles else None
-                    return mol.HasSubstructMatch(query_mol) if mol else False
-                df = df[df[smiles_col].apply(is_substructure)]
+                def is_sub(s):
+                    m = Chem.MolFromSmiles(s) if s else None
+                    return m.HasSubstructMatch(query_mol) if m else False
+                df = df[df[smiles_col].apply(is_sub)]
 
             elif search_mode == "similarity":
-                query_fp = AllChem.GetMorganFingerprintAsBitVect(query_mol, 2, nBits=2048)
-
-                def similarity(target_smiles):
-                    mol = Chem.MolFromSmiles(target_smiles) if target_smiles else None
-                    if not mol:
+                qfp = AllChem.GetMorganFingerprintAsBitVect(query_mol, 2, nBits=2048)
+                def sim(s):
+                    m = Chem.MolFromSmiles(s) if s else None
+                    if not m:
                         return 0.0
-                    fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-                    return DataStructs.TanimotoSimilarity(query_fp, fp)
+                    return DataStructs.TanimotoSimilarity(
+                        qfp, AllChem.GetMorganFingerprintAsBitVect(m, 2, nBits=2048))
+                df["similarity"] = df[smiles_col].apply(sim)
+                df = df[df["similarity"] >= similarity_threshold].sort_values(
+                    "similarity", ascending=False)
 
-                df["similarity"] = df[smiles_col].apply(similarity)
-                df = df[df["similarity"] >= similarity_threshold]
-                df = df.sort_values(by="similarity", ascending=False)
-
-            # Apply user-requested page slice AFTER Python filtering.
             df = df.iloc[offset: offset + limit]
 
         return df
@@ -227,9 +261,6 @@ def search_molecules(
     except Exception as e:
         logger.error(
             "Error during molecule search: %s — %s",
-            type(e).__name__,
-            e,
-            exc_info=True,
+            type(e).__name__, e, exc_info=True,
         )
         return None
-        

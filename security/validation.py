@@ -1,5 +1,6 @@
 MAX_QUERY_LEN: int = 512
 
+
 def validate_text_query(value: str) -> str:
     if not value:
         return ""
@@ -22,5 +23,5 @@ def validate_smiles(value: str) -> str:
             f"SMILES string is too long (max {MAX_QUERY_LEN} characters)."
         )
     if any(ord(c) < 32 and c not in ("\t",) for c in value):
-        raise ValueError("SMILES contains invalid control characters.")
+        raise ValueError("SMILES string contains invalid control characters.")
     return value
