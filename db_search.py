@@ -14,7 +14,6 @@ warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 logger = logging.getLogger(__name__)
 
-_DB_ROW_HARD_LIMIT = 1000
 _LIKE_ESCAPE_CHAR  = "!"
 
 # ── DB→API field mapping (all aliasing happens in SQL, not application code) ──
@@ -93,7 +92,7 @@ def search_molecules(
     maxWeight=None,
     search_mode="",
     similarity_threshold=0.7,
-    limit=200,
+    limit="",
     offset=0,
 ):
     """Query the molecule table.
@@ -207,8 +206,7 @@ def search_molecules(
         needs_python_filter = bool(smiles and not has_rdkit)
 
         if needs_python_filter:
-            query += S.SQL(" LIMIT %s")
-            params.append(_DB_ROW_HARD_LIMIT)
+            pass
         else:
             query += S.SQL(" LIMIT %s OFFSET %s")
             params.extend([limit, offset])

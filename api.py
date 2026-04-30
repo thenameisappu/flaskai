@@ -109,7 +109,7 @@ async def search_compounds(
     smiles: Optional[str] = Query(None, max_length=MAX_QUERY_LEN, description="SMILES string for structural search"),
     searchMode: Optional[str] = Query(None, description="exact | substructure | similarity — omit for all three"),
     threshold: float = Query(0.7, ge=0.0, le=1.0),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1),
     offset: int = Query(0, ge=0),
     _key: str = Depends(verify_api_key),
 ):
