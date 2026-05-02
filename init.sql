@@ -1,85 +1,104 @@
+#!/bin/bash
+# =============================================================================
+#  Molecule Search API — Database Initialization
+#  Reads MOLECULES_TABLE from environment (set via docker-compose env block)
+# =============================================================================
+
+set -e
+
+TABLE="${MOLECULES_TABLE:-production_molecules}"
+
+echo "================================================"
+echo " Initializing database..."
+echo "   Table: ${TABLE}"
+echo "================================================"
+
+psql -v ON_ERROR_STOP=1 \
+     --username "$POSTGRES_USER" \
+     --dbname   "$POSTGRES_DB" \
+     <<-EOSQL
+
+-- ---------------------------------------------------------------------------
+-- 1. Extensions
+-- ---------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS rdkit;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
-
-CREATE TABLE IF NOT EXISTS production_molecules (
-    id               SERIAL PRIMARY KEY,
-    "structureMol"   mol,                        -- RDKit mol type
-    "casNumber"      TEXT,
-    "alternativeNames" TEXT[],
-    cid              BIGINT,
-    "iupacName"      TEXT,
-    "molWeight"      NUMERIC(12, 4),
-    "inchiKey"       TEXT,
-    fp_0  BIGINT, fp_1  BIGINT, fp_2  BIGINT, fp_3  BIGINT,
-    fp_4  BIGINT, fp_5  BIGINT, fp_6  BIGINT, fp_7  BIGINT,
-    fp_8  BIGINT, fp_9  BIGINT, fp_10 BIGINT, fp_11 BIGINT,
-    fp_12 BIGINT, fp_13 BIGINT, fp_14 BIGINT, fp_15 BIGINT,
-    fp_16 BIGINT, fp_17 BIGINT, fp_18 BIGINT, fp_19 BIGINT,
-    fp_20 BIGINT, fp_21 BIGINT, fp_22 BIGINT, fp_23 BIGINT,
-    fp_24 BIGINT, fp_25 BIGINT, fp_26 BIGINT, fp_27 BIGINT,
-    fp_28 BIGINT, fp_29 BIGINT, fp_30 BIGINT, fp_31 BIGINT,
-    popcnt INTEGER
+-- ---------------------------------------------------------------------------
+-- 2. Table
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "${TABLE}" (
+    id                SERIAL   PRIMARY KEY,
+    "structureMol"    mol,
+    "casNumber"       TEXT,
+    "alternativeNames" TEXT[]  DEFAULT '{}',
+    cid               INTEGER,
+    "iupacName"       TEXT,
+    "molWeight"       FLOAT,
+    "inchiKey"        TEXT
 );
 
+-- ---------------------------------------------------------------------------
+-- 3. Indexes
+-- ---------------------------------------------------------------------------
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_molecules_inchikey
-    ON production_molecules ("inchiKey");
+-- Substructure search (@>)
+CREATE INDEX IF NOT EXISTS idx_mol_gist
+    ON "${TABLE}" USING GIST ("structureMol");
 
+-- Tanimoto similarity (tanimoto_sml + morgan_fp)
+CREATE INDEX IF NOT EXISTS idx_mol_morgan_fp
+    ON "${TABLE}" USING GIST (morgan_fp("structureMol"));
 
-CREATE INDEX IF NOT EXISTS idx_molecules_mol_gist
-    ON production_molecules USING gist ("structureMol");
+-- Exact match via InChIKey
+CREATE INDEX IF NOT EXISTS idx_inchikey
+    ON "${TABLE}" ("inchiKey");
 
+-- CAS number (ILIKE pattern)
+CREATE INDEX IF NOT EXISTS idx_casnumber
+    ON "${TABLE}" ("casNumber" text_pattern_ops);
 
-CREATE INDEX IF NOT EXISTS idx_molecules_iupacname_norm_btree
-    ON production_molecules
-    (lower(replace(replace("iupacName", '-', ' '), '_', ' ')));
+-- IUPAC name (lower() + LIKE pattern)
+CREATE INDEX IF NOT EXISTS idx_iupacname_lower
+    ON "${TABLE}" (lower("iupacName") text_pattern_ops);
 
-CREATE INDEX IF NOT EXISTS idx_molecules_iupacname_norm_trgm
-    ON production_molecules
-    USING gin (lower(replace(replace("iupacName", '-', ' '), '_', ' ')) gin_trgm_ops);
+-- Molecular weight range queries
+CREATE INDEX IF NOT EXISTS idx_molweight
+    ON "${TABLE}" ("molWeight");
 
+-- CID lookup
+CREATE INDEX IF NOT EXISTS idx_cid
+    ON "${TABLE}" (cid);
 
-CREATE INDEX IF NOT EXISTS idx_molecules_casnumber_btree
-    ON production_molecules (lower("casNumber"));
+-- alternativeNames array (GIN for unnest queries)
+CREATE INDEX IF NOT EXISTS idx_altnames_gin
+    ON "${TABLE}" USING GIN ("alternativeNames");
 
-CREATE INDEX IF NOT EXISTS idx_molecules_casnumber_trgm
-    ON production_molecules
-    USING gin (lower("casNumber") gin_trgm_ops);
+-- ---------------------------------------------------------------------------
+-- 4. Verify
+-- ---------------------------------------------------------------------------
+DO \$\$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_extension WHERE extname = 'rdkit'
+    ) THEN
+        RAISE EXCEPTION 'RDKit extension is NOT installed.';
+    END IF;
 
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_tables WHERE tablename = '${TABLE}'
+    ) THEN
+        RAISE EXCEPTION 'Table ${TABLE} was not created.';
+    END IF;
 
-CREATE INDEX IF NOT EXISTS idx_molecules_cid_btree
-    ON production_molecules (cid);
+    RAISE NOTICE '================================================';
+    RAISE NOTICE ' Init complete.';
+    RAISE NOTICE '   Table   : ${TABLE}';
+    RAISE NOTICE '   Indexes : 8 created';
+    RAISE NOTICE '   RDKit   : OK';
+    RAISE NOTICE '================================================';
+END;
+\$\$;
 
-CREATE INDEX IF NOT EXISTS idx_molecules_cid_text_trgm
-    ON production_molecules
-    USING gin (CAST(cid AS TEXT) gin_trgm_ops);
+EOSQL
 
-
-CREATE INDEX IF NOT EXISTS idx_molecules_molweight_btree
-    ON production_molecules ("molWeight");
-
-
-CREATE INDEX IF NOT EXISTS idx_molecules_altnames_gin
-    ON production_molecules USING gin ("alternativeNames");
-
-
-CREATE INDEX IF NOT EXISTS idx_molecules_covering
-    ON production_molecules (id, "molWeight", "inchiKey")
-    INCLUDE ("casNumber", cid, "iupacName");
-
-
-ALTER TABLE production_molecules
-    ALTER COLUMN "inchiKey"   SET STATISTICS 500,
-    ALTER COLUMN "iupacName"  SET STATISTICS 500,
-    ALTER COLUMN "casNumber"  SET STATISTICS 300,
-    ALTER COLUMN "molWeight"  SET STATISTICS 300,
-    ALTER COLUMN cid          SET STATISTICS 300;
-
-
-ALTER TABLE production_molecules
-    SET (
-        autovacuum_vacuum_scale_factor  = 0.01,
-        autovacuum_analyze_scale_factor = 0.005,
-        autovacuum_vacuum_cost_delay    = 2
-    );
+echo "Done."

@@ -22,7 +22,7 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       POSTGRES_DB: ${DB_NAME:-postgres}
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      MOLECULES_TABLE: ${MOLECULES_TABLE:-production_molecules}  
     ports:
       - "${DB_PORT:-5433}:5432"
     volumes:
