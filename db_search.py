@@ -19,7 +19,6 @@ _LIKE_ESCAPE_CHAR  = "!"
 _SELECT_TEMPLATE = (
     "SELECT "
     "*, "
-    "mol_to_smiles({smol}) AS smiles "
     "FROM {tbl} WHERE 1=1"
 )
 
