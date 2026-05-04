@@ -175,12 +175,8 @@ def search_molecules(
             params.extend([limit, offset])
 
         df = pd.read_sql(query.as_string(conn), conn, params=params)
-        conn.close()
-
-        
-        df = pd.read_sql(query.as_string(conn), conn, params=params)
         df = df.drop(columns=["structureMol"], errors="ignore")
-
+        conn.close()
 
         if needs_python_filter and not df.empty:
             query_mol = Chem.MolFromSmiles(smiles)
