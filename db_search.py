@@ -17,13 +17,11 @@ logger = logging.getLogger(__name__)
 _LIKE_ESCAPE_CHAR  = "!"
 
 _SELECT_TEMPLATE = (
-    "SELECT *"
+    "SELECT "
+    "*, "
+    "mol_to_smiles({smol}) AS smiles "
     "FROM {tbl} WHERE 1=1"
 )
-
-
-df = pd.read_sql(query.as_string(conn), conn, params=params)
-df = df.drop(columns=["structureMol"], errors="ignore")
 
 
 def escape_like(value: str) -> str:
@@ -86,6 +84,7 @@ def search_molecules(
 
         # ── Canonical SELECT: every DB→API alias is defined here ───────────────
         query = S.SQL(_SELECT_TEMPLATE).format(
+            smol=S.Identifier("structureMol"),
             tbl=S.Identifier(table_name),
         )
         params = []
