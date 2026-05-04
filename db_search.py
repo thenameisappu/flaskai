@@ -17,13 +17,10 @@ logger = logging.getLogger(__name__)
 _LIKE_ESCAPE_CHAR  = "!"
 
 _SELECT_TEMPLATE = (
-    "SELECT *"
+    "SELECT * "
     "FROM {tbl} WHERE 1=1"
 )
 
-
-df = pd.read_sql(query.as_string(conn), conn, params=params)
-df = df.drop(columns=["structureMol"], errors="ignore")
 
 
 def escape_like(value: str) -> str:
@@ -180,8 +177,11 @@ def search_molecules(
         df = pd.read_sql(query.as_string(conn), conn, params=params)
         conn.close()
 
-        # ── Python-fallback structural filtering (no RDKit extension) ──────────
-        # DataFrame columns use the SQL aliases: "smiles", "inchikey", etc.
+        
+        df = pd.read_sql(query.as_string(conn), conn, params=params)
+        df = df.drop(columns=["structureMol"], errors="ignore")
+
+
         if needs_python_filter and not df.empty:
             query_mol = Chem.MolFromSmiles(smiles)
             if not query_mol:
