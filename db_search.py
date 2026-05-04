@@ -16,34 +16,10 @@ logger = logging.getLogger(__name__)
 
 _LIKE_ESCAPE_CHAR  = "!"
 
-# ── DB→API field mapping (all aliasing happens in SQL, not application code) ──
-# DB column        SQL alias
-# id            →  id
-# structureMol  →  smiles        via mol_to_smiles()   [mol → str]
-# casNumber     →  casnumber
-# alternativeNames→ alternativenames  via array_to_string()
-# cid           →  cid
-# iupacName     →  iupacname
-# molWeight     →  molweight
-# inchiKey      →  inchikey
-#
-# Excluded from SELECT: fp_0–fp_31, popcnt, mol_id
-# ─────────────────────────────────────────────────────────────────────────────
-
-# The API parameter accepted from callers is always a SMILES string.
-# It is passed to SQL functions (mol_from_smiles, morgan_fp, …) inside the
-# WHERE clause.  The structureMol DB column is never touched directly in Python.
-
 _SELECT_TEMPLATE = (
     "SELECT "
-    "id, "
-    "mol_to_smiles({smol}) AS smiles, "
-    "{cas} AS casnumber, "
-    "array_to_string({alt}, ', ') AS alternativenames, "
-    "cid, "
-    "{iupac} AS iupacname, "
-    "{mw} AS molweight, "
-    "{ik} AS inchikey "
+    "*, "
+    "mol_to_smiles({smol}) AS smiles "
     "FROM {tbl} WHERE 1=1"
 )
 
@@ -109,11 +85,6 @@ def search_molecules(
         # ── Canonical SELECT: every DB→API alias is defined here ───────────────
         query = S.SQL(_SELECT_TEMPLATE).format(
             smol=S.Identifier("structureMol"),
-            cas=S.Identifier("casNumber"),
-            alt=S.Identifier("alternativeNames"),
-            iupac=S.Identifier("iupacName"),
-            mw=S.Identifier("molWeight"),
-            ik=S.Identifier("inchiKey"),
             tbl=S.Identifier(table_name),
         )
         params = []
