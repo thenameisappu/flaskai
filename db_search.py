@@ -95,13 +95,7 @@ def search_molecules(
     limit="",
     offset=0,
 ):
-    """Query the molecule table.
-
-    ``smiles`` is always a SMILES string (the API-facing concept).
-    It is passed to RDKit SQL functions (mol_from_smiles, morgan_fp, …) inside
-    the WHERE clause.  The DB column ``structureMol`` (mol type) is only
-    referenced via SQL identifiers — never touched directly in Python.
-    """
+    conn = None
     try:
         conn = get_connection()
         has_rdkit = check_rdkit_extension(conn)
@@ -257,8 +251,15 @@ def search_molecules(
         return df
 
     except Exception as e:
-        logger.error(
-            "Error during molecule search: %s — %s",
+        logger.error("Error during molecule search: %s — %s",
             type(e).__name__, e, exc_info=True,
         )
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return None
+    finally:
+        if conn:
+            conn.close()
