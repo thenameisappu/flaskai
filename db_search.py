@@ -16,11 +16,21 @@ logger = logging.getLogger(__name__)
 
 _LIKE_ESCAPE_CHAR  = "!"
 
-_SELECT_TEMPLATE = (
-    "SELECT * "
-    "FROM {tbl} WHERE 1=1"
-)
 
+_SELECTED_COLUMNS = [
+    "id",
+    "casNumber",
+    "alternativeNames",
+    "cid",
+    "iupacName",
+    "molWeight",
+    "inchiKey",
+    "createdAt",
+    "updatedAt",
+    "mol_id",
+]
+ 
+_SELECT_TEMPLATE = "SELECT {cols} FROM {tbl} WHERE 1=1"
 
 
 def escape_like(value: str) -> str:
@@ -175,7 +185,6 @@ def search_molecules(
             params.extend([limit, offset])
 
         df = pd.read_sql(query.as_string(conn), conn, params=params)
-        df = df.drop(columns=["structureMol"], errors="ignore")
         conn.close()
 
         if needs_python_filter and not df.empty:
@@ -230,4 +239,7 @@ def search_molecules(
         return None
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
