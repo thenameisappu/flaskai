@@ -19,7 +19,6 @@ _LIKE_ESCAPE_CHAR  = "!"
 
 _SELECTED_COLUMNS = [
     "id",
-    "structureMol",
     "casNumber",
     "alternativeNames",
     "cid",
@@ -31,7 +30,7 @@ _SELECTED_COLUMNS = [
     "mol_id",
 ]
  
-_SELECT_TEMPLATE = "SELECT {cols} FROM {tbl} WHERE 1=1"
+_SELECT_TEMPLATE = "SELECT {cols}, mol_to_smiles(\"structureMol\") AS \"structureMol\" FROM {tbl} WHERE 1=1"
 
 
 def escape_like(value: str) -> str:
