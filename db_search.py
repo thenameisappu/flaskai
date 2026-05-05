@@ -92,7 +92,9 @@ def search_molecules(
             raise ValueError(f"Invalid table name: {table_name}")
 
         # ── Canonical SELECT: every DB→API alias is defined here ───────────────
+        cols = S.SQL(", ").join(S.Identifier(c) for c in _SELECTED_COLUMNS)
         query = S.SQL(_SELECT_TEMPLATE).format(
+            cols=cols,
             tbl=S.Identifier(table_name),
         )
         params = []
@@ -185,7 +187,6 @@ def search_molecules(
             params.extend([limit, offset])
 
         df = pd.read_sql(query.as_string(conn), conn, params=params)
-        conn.close()
 
         if needs_python_filter and not df.empty:
             query_mol = Chem.MolFromSmiles(smiles)
