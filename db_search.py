@@ -19,6 +19,7 @@ _LIKE_ESCAPE_CHAR  = "!"
 
 _SELECTED_COLUMNS = [
     "id",
+    "structureMol",
     "casNumber",
     "alternativeNames",
     "cid",
